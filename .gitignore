@@ -1,0 +1,36 @@
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+
+# Tauri generated bundles
+src-tauri/gen/
+
+# SQLite database (user data)
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
