@@ -2,35 +2,42 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, Copy, X } from "lucide-react";
 
+// Check if running inside a real Tauri shell (not a plain browser)
+const isTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 export default function TitleBarControls() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    const win = getCurrentWindow();
-    
-    // Check initial maximized state
-    win.isMaximized().then(setIsMaximized);
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
 
-    // Listen to resize to update maximized state
-    const unlistenPromise = win.onResized(() => {
-      win.isMaximized().then(setIsMaximized);
-    });
+    try {
+      const win = getCurrentWindow();
+      win.isMaximized().then(setIsMaximized).catch(() => {});
+      win.onResized(() => {
+        win.isMaximized().then(setIsMaximized).catch(() => {});
+      }).then((fn) => { unlisten = fn; }).catch(() => {});
+    } catch {
+      // Tauri IPC not ready yet — safe to ignore
+    }
 
-    return () => {
-      unlistenPromise.then((unlisten) => unlisten());
-    };
+    return () => { unlisten?.(); };
   }, []);
 
   const handleMinimize = () => {
-    getCurrentWindow().minimize();
+    if (!isTauri()) return;
+    try { getCurrentWindow().minimize(); } catch {}
   };
 
   const handleMaximize = () => {
-    getCurrentWindow().toggleMaximize();
+    if (!isTauri()) return;
+    try { getCurrentWindow().toggleMaximize(); } catch {}
   };
 
   const handleClose = () => {
-    getCurrentWindow().close();
+    if (!isTauri()) return;
+    try { getCurrentWindow().close(); } catch {}
   };
 
   return (
