@@ -1,0 +1,460 @@
+import { useState, useMemo, useRef, useEffect } from "react";
+import { motion } from "framer-motion";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { humanizeEnum } from "../../lib/format";
+import { invoke } from "@tauri-apps/api/core";
+import DiscoverCard from "../../components/DiscoverCard";
+import { useLibrary } from "../../store/library";
+
+interface DiscoverAnime {
+  id: number;
+  title: { romaji: string | null; english: string | null };
+  coverImage: {
+    large: string | null;
+    extraLarge: string | null;
+    color: string | null;
+  };
+  averageScore: number | null;
+  seasonYear: number | null;
+  format: string | null;
+  description: string | null;
+  bannerImage: string | null;
+  genres: string[];
+  status: string | null;
+  episodes: number | null;
+  trailer: { id: string | null; site: string | null } | null;
+}
+
+async function fetchDiscoverData(
+  sortType: string,
+  isSeasonal: boolean,
+  pageParam: number,
+  season: string,
+  year: number,
+  search?: string,
+  genre?: string,
+  tag?: string,
+): Promise<DiscoverAnime[]> {
+  const query = genre
+    ? `query ($page: Int, $genre: String) {
+        Page(page: $page, perPage: 24) {
+          media(type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
+            id
+            title { romaji english }
+            coverImage { large extraLarge color }
+            averageScore
+            seasonYear
+            format
+            description(asHtml: false)
+            bannerImage
+            genres
+            status
+            episodes
+            trailer { id site }
+          }
+        }
+      }`
+    : tag
+      ? `query ($page: Int, $tag: String) {
+        Page(page: $page, perPage: 24) {
+          media(type: ANIME, tag: $tag, sort: POPULARITY_DESC) {
+            id
+            title { romaji english }
+            coverImage { large extraLarge color }
+            averageScore
+            seasonYear
+            format
+            description(asHtml: false)
+            bannerImage
+            genres
+            status
+            episodes
+            trailer { id site }
+          }
+        }
+      }`
+      : search
+        ? `query ($page: Int, $search: String) {
+        Page(page: $page, perPage: 24) {
+          media(type: ANIME, search: $search) {
+            id
+            title { romaji english }
+            coverImage { large extraLarge color }
+            averageScore
+            seasonYear
+            format
+            description(asHtml: false)
+            bannerImage
+            genres
+            status
+            episodes
+            trailer { id site }
+          }
+        }
+      }`
+        : isSeasonal
+          ? `query ($page: Int, $season: MediaSeason, $seasonYear: Int) {
+        Page(page: $page, perPage: 24) {
+          media(type: ANIME, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC) {
+            id
+            title { romaji english }
+            coverImage { large extraLarge color }
+            averageScore
+            seasonYear
+            format
+            description(asHtml: false)
+            bannerImage
+            genres
+            status
+            episodes
+            trailer { id site }
+          }
+        }
+      }`
+          : `query ($page: Int) {
+        Page(page: $page, perPage: 24) {
+          media(type: ANIME, sort: ${sortType}) {
+            id
+            title { romaji english }
+            coverImage { large extraLarge color }
+            averageScore
+            seasonYear
+            format
+            description(asHtml: false)
+            bannerImage
+            genres
+            status
+            episodes
+            trailer { id site }
+          }
+        }
+      }`;
+
+  const variables: Record<string, unknown> = { page: pageParam };
+  if (genre) {
+    variables.genre = genre;
+  } else if (tag) {
+    variables.tag = tag;
+  } else if (search) {
+    variables.search = search;
+  } else if (isSeasonal) {
+    variables.season = season;
+    variables.seasonYear = year;
+  }
+
+  const data = await invoke<any>("graphql_anilist", { query, variables });
+  return data?.data?.Page?.media ?? [];
+}
+
+export default function DiscoverPage() {
+  const { cardSize, setCardSize, entries } = useLibrary();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const [activeTab, setActiveTab] = useState(0);
+
+  const [selectedSeason, setSelectedSeason] = useState("SUMMER");
+  const [selectedYear, setSelectedYear] = useState(2026);
+
+  const searchParam = searchParams.get("search") || "";
+  const genreParam = searchParams.get("genre") || "";
+  const tagParam = searchParams.get("tag") || "";
+  const activeSearch = searchParam || genreParam || tagParam;
+
+  const [searchQuery, setSearchQuery] = useState(activeSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(activeSearch);
+
+  useEffect(() => {
+    const s = searchParams.get("search") || "";
+    const g = searchParams.get("genre") || "";
+    const t = searchParams.get("tag") || "";
+    const val = s || g || t;
+    setSearchQuery(val);
+    setDebouncedSearch(val);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchQuery === activeSearch) {
+      return;
+    }
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      if (searchQuery) {
+        setSearchParams({ search: searchQuery });
+      } else {
+        setSearchParams({});
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [searchQuery, activeSearch, setSearchParams]);
+
+  const TABS = useMemo(() => {
+    return [
+      { label: "Trending", sort: "TRENDING_DESC", seasonal: false },
+      {
+        label: `${humanizeEnum(selectedSeason)} ${selectedYear}`,
+        sort: "POPULARITY_DESC",
+        seasonal: true,
+      },
+      { label: "Popular", sort: "POPULARITY_DESC", seasonal: false },
+      { label: "Top Rated", sort: "SCORE_DESC", seasonal: false },
+    ];
+  }, [selectedSeason, selectedYear]);
+
+  const currentTab = TABS[activeTab] || TABS[0];
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error,
+  } = useInfiniteQuery({
+    queryKey: [
+      "discover",
+      currentTab.sort,
+      currentTab.seasonal,
+      selectedSeason,
+      selectedYear,
+      debouncedSearch,
+      searchParams.get("genre"),
+      searchParams.get("tag"),
+    ],
+    queryFn: ({ pageParam = 1 }) =>
+      fetchDiscoverData(
+        currentTab.sort,
+        currentTab.seasonal,
+        pageParam as number,
+        selectedSeason,
+        selectedYear,
+        searchParams.get("search") || undefined,
+        searchParams.get("genre") || undefined,
+        searchParams.get("tag") || undefined,
+      ),
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === 24 ? allPages.length + 1 : undefined;
+    },
+    initialPageParam: 1,
+  });
+
+  const list = useMemo(() => {
+    return data ? data.pages.flat() : [];
+  }, [data]);
+
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [sentinelRef, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return (
+    <div className="flex-1 h-full flex flex-col">
+      {/* Fixed header/filter toolbar - outside scrollable area */}
+      <div className="px-6 pt-5 pb-0 shrink-0">
+        {/* Header and Search Input */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <motion.h1
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="font-display text-4xl font-bold"
+            >
+              Discover <span className="text-gradient">Anime</span>
+            </motion.h1>
+            <p className="mt-1 text-sm text-yuui-muted">
+              Browse seasonal titles, popular shows, or search AniList.
+            </p>
+          </div>
+
+          {/* Search bar input field */}
+          <div className="relative w-full max-w-xs no-drag">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search AniList..."
+              className="w-full glass rounded-xl bg-transparent pl-10 pr-4 py-2.5 text-sm outline-none placeholder:text-yuui-muted/50 border border-white/[0.05] focus:border-yuui-accent/40 text-white"
+            />
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-yuui-muted/60">
+              🔍
+            </span>
+          </div>
+        </div>
+
+        {/* Tabs and Optional Selectors */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.04] pb-3 select-none">
+          <div className="flex gap-2 overflow-x-auto">
+            {TABS.map((tab, i) => {
+              const isActive = activeTab === i && !searchQuery;
+              return (
+                <button
+                  key={tab.label}
+                  onClick={() => {
+                    setSearchQuery(""); // Clear search to return to tabs
+                    setActiveTab(i);
+                  }}
+                  className={`relative px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    isActive ? "text-white" : "text-yuui-muted hover:text-white"
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="discover-tab-active"
+                      className="absolute inset-0 bg-white/[0.06] rounded-xl border border-white/5"
+                      transition={{
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 25,
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </button>
+              );
+            })}
+            {searchQuery && (
+              <span className="relative px-4 py-2 rounded-xl text-sm font-semibold text-yuui-accent bg-yuui-accent/15 border border-yuui-accent/20">
+                Search: "{searchQuery}"
+              </span>
+            )}
+          </div>
+
+          {/* Card size slider and Season & Year selectors */}
+          <div className="flex items-center gap-3">
+            {/* Card size slider */}
+            <div className="glass rounded-xl px-3 py-1.5 flex items-center justify-between border border-white/[0.05] gap-2">
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider shrink-0 mr-1">
+                Card Size
+              </span>
+              <input
+                type="range"
+                min="140"
+                max="260"
+                value={cardSize}
+                onChange={(e) => setCardSize(Number(e.target.value))}
+                className="w-24 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent"
+              />
+              <span className="text-[10px] text-white font-semibold font-mono w-8 text-right shrink-0">
+                {cardSize}px
+              </span>
+            </div>
+
+            {/* Season & Year dropdowns for Seasonal tab */}
+            {currentTab.seasonal && !searchQuery && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedSeason}
+                  onChange={(e) => setSelectedSeason(e.target.value)}
+                  className="glass rounded-xl bg-transparent px-3 py-1.5 text-xs font-semibold outline-none border border-white/[0.05]"
+                >
+                  <option value="WINTER" className="bg-yuui-panel text-white">
+                    Winter
+                  </option>
+                  <option value="SPRING" className="bg-yuui-panel text-white">
+                    Spring
+                  </option>
+                  <option value="SUMMER" className="bg-yuui-panel text-white">
+                    Summer
+                  </option>
+                  <option value="FALL" className="bg-yuui-panel text-white">
+                    Fall
+                  </option>
+                </select>
+
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="glass rounded-xl bg-transparent px-3 py-1.5 text-xs font-semibold outline-none border border-white/[0.05]"
+                >
+                  {[2027, 2026, 2025, 2024, 2023, 2022, 2021, 2020].map((y) => (
+                    <option
+                      key={y}
+                      value={y}
+                      className="bg-yuui-panel text-white"
+                    >
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable card grid area */}
+      <div className="flex-1 overflow-y-auto px-6 pb-8 mt-6">
+        {/* Grid List */}
+        <div>
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center gap-4 py-24">
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-yuui-accent" />
+              <p className="text-sm text-yuui-muted">Loading anime...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="glass rounded-2xl border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+              Failed to fetch anime: {String(error)}
+            </div>
+          )}
+
+          {!isLoading && !error && (
+            <>
+              <div
+                className="grid gap-5"
+                style={{
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${cardSize}px, 1fr))`,
+                }}
+              >
+                {list.map((anime) => {
+                  const localEntry = entries.find(
+                    (e) =>
+                      e.media?.id === anime.id && e.files && e.files.length > 0,
+                  );
+                  const targetKey = localEntry
+                    ? localEntry.key
+                    : `anilist:${anime.id}`;
+                  return (
+                    <DiscoverCard
+                      key={anime.id}
+                      anime={anime}
+                      onClick={() =>
+                        navigate(`/anime/${encodeURIComponent(targetKey)}`)
+                      }
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Infinite Scroll sentinel element */}
+              <div
+                ref={sentinelRef}
+                className="h-14 w-full flex items-center justify-center mt-6"
+              >
+                {isFetchingNextPage && (
+                  <div className="flex items-center gap-2 text-xs text-yuui-muted">
+                    <div className="h-4 w-4 animate-spin rounded-full border border-white/10 border-t-yuui-accent" />
+                    <span>Loading more...</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
