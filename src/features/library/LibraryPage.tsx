@@ -60,7 +60,9 @@ function StatusIcon({ status }: { status: SearchProgressItem["status"] }) {
     return <XCircle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
   if (status === "error")
     return <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />;
-  return <Loader2 className="h-3.5 w-3.5 text-yuui-accent animate-spin shrink-0" />;
+  return (
+    <Loader2 className="h-3.5 w-3.5 text-yuui-accent animate-spin shrink-0" />
+  );
 }
 
 /**
@@ -106,7 +108,9 @@ function AniListSearchPanel({
 
   // Build the visible list: every completed search from history, plus the
   // in-flight one at the bottom if it hasn't landed in history yet.
-  const rows: (SearchProgressItem & { active?: boolean })[] = [...searchHistory];
+  const rows: (SearchProgressItem & { active?: boolean })[] = [
+    ...searchHistory,
+  ];
   if (
     searchProgress &&
     searchProgress.status === "searching" &&
@@ -118,12 +122,12 @@ function AniListSearchPanel({
   return (
     <AnimatePresence>
       {isSearching && (
-        <motion.aside
-          initial={{ opacity: 0, x: 40 }}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 40 }}
-          transition={{ type: "spring", stiffness: 260, damping: 30 }}
-          className="fixed right-4 top-24 bottom-6 z-30 w-[340px] flex flex-col glass rounded-3xl border border-yuui-accent/20 bg-yuui-surface/80 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden"
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.2 }}
+          className="w-full flex flex-col bg-black rounded-3xl border border-white/10 shadow-lg overflow-hidden h-[550px]"
         >
           {/* Header */}
           <div className="shrink-0 px-4 pt-4 pb-3 border-b border-white/[0.06]">
@@ -191,7 +195,7 @@ function AniListSearchPanel({
                   ref={isActive ? activeRef : null}
                   className={`flex items-start gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${
                     isActive
-                      ? "bg-yuui-accent/10 border border-yuui-accent/30"
+                      ? "bg-yuui-accent/15 border border-yuui-accent/30"
                       : "border border-transparent hover:bg-white/[0.03]"
                   }`}
                 >
@@ -252,11 +256,12 @@ function AniListSearchPanel({
               Cancel
             </button>
           </div>
-        </motion.aside>
+        </motion.div>
       )}
     </AnimatePresence>
   );
 }
+
 
 export default function LibraryPage() {
   const {
@@ -687,670 +692,668 @@ export default function LibraryPage() {
   const busy = status === "scanning" || status === "matching";
 
   // Search progress summary
-  const matchedCount = searchHistory.filter((s) => s.status === "matched").length;
-  const notFoundCount = searchHistory.filter((s) => s.status === "not_found").length;
+  const matchedCount = searchHistory.filter(
+    (s) => s.status === "matched",
+  ).length;
+  const notFoundCount = searchHistory.filter(
+    (s) => s.status === "not_found",
+  ).length;
   const errorCount = searchHistory.filter((s) => s.status === "error").length;
-  const lowConfCount = searchHistory.filter((s) => s.status === "low_confidence").length;
+  const lowConfCount = searchHistory.filter(
+    (s) => s.status === "low_confidence",
+  ).length;
 
   return (
-    <div className="flex h-full flex-col pt-5">
-      {/* Fixed toolbar section - no overflow clipping */}
-      <div className="shrink-0">
-        {/* Header */}
-        <div className="flex flex-wrap items-end justify-between gap-4 px-6">
-          <div className="flex flex-wrap items-end gap-6">
-            <div>
-              <motion.h1
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="font-display text-4xl font-bold"
-              >
-                Your <span className="text-gradient">Library</span>
-              </motion.h1>
-              <p className="mt-1 truncate text-sm text-yuui-muted">
-                {folder ?? "No folder selected"}
-              </p>
+    <div className="h-full overflow-y-auto px-6 pt-3 pb-10">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="flex flex-wrap items-end gap-6">
+          <div>
+            <motion.h1
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="font-display text-4xl font-bold"
+            >
+              Your <span className="text-gradient">Library</span>
+            </motion.h1>
+            <p className="mt-1 truncate text-sm text-yuui-muted">
+              {folder ?? "No folder selected"}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 select-none">
+            <div
+              onClick={() => setShowStats(!showStats)}
+              className="flex items-center gap-3 cursor-pointer group"
+            >
+              <StatPill label="Series" value={matchedEntries.length} />
+              <StatPill label="Episodes" value={totalEps} />
+              <div className="glass rounded-2xl p-3 grid place-items-center transition-colors group-hover:bg-white/[0.08]">
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-white transition-transform duration-300 ${showStats ? "rotate-180" : ""}`}
+                />
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 select-none pb-1">
-              <div
-                onClick={() => setShowStats(!showStats)}
-                className="flex items-center gap-3 cursor-pointer group"
-              >
-                <StatPill label="Series" value={matchedEntries.length} />
-                <StatPill label="Episodes" value={totalEps} />
-                <div className="glass rounded-2xl p-3 grid place-items-center transition-colors group-hover:bg-white/[0.08]">
-                  <ChevronDown
-                    className={`h-3.5 w-3.5 text-white transition-transform duration-300 ${showStats ? "rotate-180" : ""}`}
-                  />
-                </div>
+            <div
+              onClick={() => navigate("/review")}
+              className={`glass rounded-2xl px-4 py-3 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] ${
+                needReview > 0
+                  ? "border border-yellow-500/40 bg-yellow-500/5 shadow-glow"
+                  : ""
+              }`}
+            >
+              <div className="font-display text-xl leading-none text-white">
+                {needReview}
               </div>
-
-              <div
-                onClick={() => navigate("/review")}
-                className={`glass rounded-2xl px-4 py-3 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] ${
-                  needReview > 0
-                    ? "border border-yellow-500/40 bg-yellow-500/5 shadow-glow"
-                    : ""
-                }`}
-              >
-                <div className="font-display text-xl leading-none text-white">
-                  {needReview}
-                </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wider text-yuui-muted">
-                  Review
-                </div>
+              <div className="mt-1 text-[11px] uppercase tracking-wider text-yuui-muted">
+                Review
               </div>
             </div>
           </div>
-
-          {/* The live AniList search status now lives in a single docked panel
-              on the right side of the screen (see AniListSearchPanel below). */}
-          <div className="flex items-center gap-3"></div>
         </div>
 
-        {/* Top Search Toolbar */}
-        <div className="flex flex-col gap-3 px-6 pt-4">
-          <div className="flex items-center gap-3">
-            <div className="glass flex flex-1 items-center gap-2 rounded-2xl px-4 py-2.5">
-              <Search className="h-4 w-4 text-yuui-muted" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                placeholder="Search by title, genre, studio, resolution, favorites..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-yuui-muted"
+        {/* The live AniList search status now lives in a single docked panel
+              on the right side of the screen (see AniListSearchPanel below). */}
+        <div className="flex items-center gap-3"></div>
+      </div>
+
+      {/* Top Search Toolbar */}
+      <div className="flex flex-col gap-2 px-0 pt-2">
+        <div className="flex items-center gap-2">
+          <div className="glass flex flex-1 items-center gap-2 rounded-2xl px-4 py-2.5">
+            <Search className="h-4 w-4 text-yuui-muted" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              placeholder="Search by title, genre, studio, resolution, favorites..."
+              className="w-full bg-transparent text-sm outline-none placeholder:text-yuui-muted"
+            />
+            {query && (
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setQuery("");
+                }}
+                className="text-yuui-muted hover:text-white text-xs px-1 select-none cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={rescan}
+            disabled={busy || !folder}
+            className="glass rounded-2xl px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.08] disabled:opacity-40"
+          >
+            <span className="flex items-center gap-1.5">
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
               />
-              {query && (
+              Rescan
+            </span>
+          </button>
+
+          <button
+            onClick={chooseFolder}
+            disabled={busy}
+            className="rounded-2xl bg-gradient-to-r from-yuui-accent to-yuui-accent2 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-transform hover:scale-[1.03] disabled:opacity-50"
+          >
+            <span className="flex items-center gap-1.5">
+              <Plus className="h-4 w-4" />
+              Add Folder
+            </span>
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {searchFocused && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-yuui-muted"
+            >
+              <span className="flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-yuui-accent" /> Filter
+                suggestions:
+              </span>
+              {[
+                { label: "favorites", val: "favorites" },
+                { label: "genre:Action", val: "genre:Action" },
+                { label: "studio:Trigger", val: "studio:Trigger" },
+                { label: "year:2018", val: "year:2018" },
+                { label: "res:1080p", val: "res:1080p" },
+                { label: "codec:h265", val: "codec:h265" },
+              ].map((s) => (
                 <button
+                  key={s.label}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    setQuery("");
+                    setQuery((prev) => {
+                      const trimmed = prev.trim();
+                      return trimmed ? `${trimmed} ${s.val}` : s.val;
+                    });
                   }}
-                  className="text-yuui-muted hover:text-white text-xs px-1 select-none cursor-pointer"
+                  className="glass px-2 py-0.5 rounded-md hover:bg-white/[0.08] hover:text-white transition-colors cursor-pointer text-[10px]"
                 >
-                  ✕
+                  {s.label}
                 </button>
-              )}
-            </div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
+      {/* Smart Collections Tabs */}
+      <div className="flex items-center gap-1.5 px-0 mt-3 border-b border-white/[0.04] pb-2 overflow-x-auto scrollbar-none">
+        {[
+          { id: "ALL", label: "All Titles", icon: Grid },
+          {
+            id: "CONTINUE_WATCHING",
+            label: "Continue Watching",
+            icon: History,
+          },
+          { id: "COMPLETED", label: "Completed", icon: CheckCircle2 },
+          { id: "FAVORITES", label: "Favorites", icon: Heart },
+          { id: "MOVIES_OVAS", label: "Movies & OVAs", icon: Film },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
             <button
-              onClick={rescan}
-              disabled={busy || !folder}
-              className="glass rounded-2xl px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.08] disabled:opacity-40"
+              key={tab.id}
+              onClick={() => setCurrentTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold select-none transition-all cursor-pointer border ${
+                currentTab === tab.id
+                  ? "bg-yuui-accent/15 text-yuui-accent border-yuui-accent/30 font-bold font-sans"
+                  : "text-yuui-muted hover:text-white border-transparent hover:bg-white/[0.02] font-sans"
+              }`}
             >
-              <span className="flex items-center gap-1.5">
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
-                />
-                Rescan
-              </span>
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
             </button>
+          );
+        })}
+      </div>
 
-            <button
-              onClick={chooseFolder}
-              disabled={busy}
-              className="rounded-2xl bg-gradient-to-r from-yuui-accent to-yuui-accent2 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-transform hover:scale-[1.03] disabled:opacity-50"
-            >
-              <span className="flex items-center gap-1.5">
-                <Plus className="h-4 w-4" />
-                Add Folder
-              </span>
-            </button>
-          </div>
-
-          <AnimatePresence>
-            {searchFocused && (
-              <motion.div
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-yuui-muted"
-              >
-                <span className="flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-yuui-accent" /> Filter
-                  suggestions:
+      {/* Stats Dashboard slide-down */}
+      <AnimatePresence>
+        {showStats && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden px-0 mt-3"
+          >
+            <div className="glass rounded-3xl border border-white/[0.06] bg-yuui-surface/40 p-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
+              <div>
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
+                  Watch Time
                 </span>
-                {[
-                  { label: "favorites", val: "favorites" },
-                  { label: "genre:Action", val: "genre:Action" },
-                  { label: "studio:Trigger", val: "studio:Trigger" },
-                  { label: "year:2018", val: "year:2018" },
-                  { label: "res:1080p", val: "res:1080p" },
-                  { label: "codec:h265", val: "codec:h265" },
-                ].map((s) => (
-                  <button
-                    key={s.label}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setQuery((prev) => {
-                        const trimmed = prev.trim();
-                        return trimmed ? `${trimmed} ${s.val}` : s.val;
-                      });
-                    }}
-                    className="glass px-2 py-0.5 rounded-md hover:bg-white/[0.08] hover:text-white transition-colors cursor-pointer text-[10px]"
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Smart Collections Tabs */}
-        <div className="flex items-center gap-1.5 px-6 mt-5 border-b border-white/[0.04] pb-2 overflow-x-auto scrollbar-none">
-          {[
-            { id: "ALL", label: "All Titles", icon: Grid },
-            {
-              id: "CONTINUE_WATCHING",
-              label: "Continue Watching",
-              icon: History,
-            },
-            { id: "COMPLETED", label: "Completed", icon: CheckCircle2 },
-            { id: "FAVORITES", label: "Favorites", icon: Heart },
-            { id: "MOVIES_OVAS", label: "Movies & OVAs", icon: Film },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setCurrentTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold select-none transition-all cursor-pointer border ${
-                  currentTab === tab.id
-                    ? "bg-yuui-accent/15 text-yuui-accent border-yuui-accent/30 font-bold font-sans"
-                    : "text-yuui-muted hover:text-white border-transparent hover:bg-white/[0.02] font-sans"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Stats Dashboard slide-down */}
-        <AnimatePresence>
-          {showStats && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="overflow-hidden px-8 mt-4"
-            >
-              <div className="glass rounded-3xl border border-white/[0.06] bg-yuui-surface/40 p-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
-                <div>
-                  <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
-                    Watch Time
+                <div className="mt-2 text-2xl font-bold font-display text-white">
+                  ~{stats.totalDays}{" "}
+                  <span className="text-xs font-semibold text-yuui-muted font-sans">
+                    Days
                   </span>
-                  <div className="mt-2 text-2xl font-bold font-display text-white">
-                    ~{stats.totalDays}{" "}
-                    <span className="text-xs font-semibold text-yuui-muted font-sans">
-                      Days
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-yuui-muted">
-                    ~{stats.totalHours} estimated hours watched
-                  </p>
                 </div>
+                <p className="mt-1 text-xs text-yuui-muted">
+                  ~{stats.totalHours} estimated hours watched
+                </p>
+              </div>
 
-                <div>
-                  <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
-                    Storage Size
+              <div>
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
+                  Storage Size
+                </span>
+                <div className="mt-2 text-2xl font-bold font-display text-white">
+                  {(stats.totalSize / (1024 * 1024 * 1024)).toFixed(1)}{" "}
+                  <span className="text-xs font-semibold text-yuui-muted font-sans">
+                    GB
                   </span>
-                  <div className="mt-2 text-2xl font-bold font-display text-white">
-                    {(stats.totalSize / (1024 * 1024 * 1024)).toFixed(1)}{" "}
-                    <span className="text-xs font-semibold text-yuui-muted font-sans">
-                      GB
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-yuui-muted">
-                    {(stats.totalSize / (1024 * 1024 * 1024 * 1024)).toFixed(2)}{" "}
-                    TB in library folder
-                  </p>
                 </div>
+                <p className="mt-1 text-xs text-yuui-muted">
+                  {(stats.totalSize / (1024 * 1024 * 1024 * 1024)).toFixed(2)}{" "}
+                  TB in library folder
+                </p>
+              </div>
 
-                <div>
-                  <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
-                    Top Genres
-                  </span>
-                  <div className="mt-2 space-y-1">
-                    {stats.genres.map(([genre, count]) => (
-                      <div
-                        key={genre}
-                        className="flex items-center justify-between text-xs"
-                      >
-                        <span className="text-white/80">{genre}</span>
-                        <span className="text-yuui-muted font-mono">
-                          {count} titles
-                        </span>
-                      </div>
-                    ))}
-                    {stats.genres.length === 0 && (
-                      <p className="text-xs text-yuui-muted">
-                        No genres indexed
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
-                    Library Health
-                  </span>
-                  <div className="mt-2 text-2xl font-bold font-display text-white">
-                    {stats.libraryHealth}%
-                  </div>
-                  <div className="mt-2 w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+              <div>
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
+                  Top Genres
+                </span>
+                <div className="mt-2 space-y-1">
+                  {stats.genres.map(([genre, count]) => (
                     <div
-                      className="h-full bg-gradient-to-r from-yuui-accent to-yuui-accent2 rounded-full"
-                      style={{ width: `${stats.libraryHealth}%` }}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-yuui-muted">
-                    Percent of fully completed series
-                  </p>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
-                    Disk Cleanup
-                  </span>
-                  <div className="mt-2 text-2xl font-bold font-display text-white">
-                    {duplicates.length}{" "}
-                    <span className="text-xs font-semibold text-yuui-muted font-sans">
-                      Dupes
-                    </span>
-                  </div>
-                  {duplicates.length > 0 ? (
-                    <button
-                      onClick={() => setShowDuplicatesList(!showDuplicatesList)}
-                      className="mt-2 glass rounded-xl px-3 py-1 text-[10px] font-semibold text-yuui-accent hover:bg-yuui-accent/15 transition-colors cursor-pointer select-none"
+                      key={genre}
+                      className="flex items-center justify-between text-xs"
                     >
-                      {showDuplicatesList
-                        ? "Hide Duplicates"
-                        : "View Duplicates"}
-                    </button>
-                  ) : (
-                    <p className="mt-1 text-[11px] text-yuui-muted mt-2">
-                      No duplicate episodes
-                    </p>
+                      <span className="text-white/80">{genre}</span>
+                      <span className="text-yuui-muted font-mono">
+                        {count} titles
+                      </span>
+                    </div>
+                  ))}
+                  {stats.genres.length === 0 && (
+                    <p className="text-xs text-yuui-muted">No genres indexed</p>
                   )}
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Duplicate list details */}
-        <AnimatePresence>
-          {showStats && showDuplicatesList && duplicates.length > 0 && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="overflow-hidden px-8 mt-3"
-            >
-              <div className="glass rounded-3xl border border-white/[0.06] bg-yuui-surface/40 p-5 space-y-4 max-h-[300px] overflow-y-auto">
-                <h3 className="font-display text-sm font-bold text-white flex items-center gap-2 select-none">
-                  <Layers className="h-4 w-4 text-yuui-accent" /> Duplicate
-                  Files Found
-                </h3>
-                <p className="text-xs text-yuui-muted">
-                  These episodes have multiple video files in your library
-                  folder. You can clean them up to free space.
-                </p>
-                <div className="divide-y divide-white/[0.04] space-y-3 pt-2">
-                  {duplicates.map((d, idx) => (
-                    <div key={idx} className="pt-3 first:pt-0">
-                      <span className="text-xs font-bold text-white/90">
-                        {d.seriesTitle} — Episode {d.episode}
-                      </span>
-                      <div className="mt-2 space-y-1.5 pl-3 border-l border-white/[0.06]">
-                        {d.files.map((f, fIdx) => (
-                          <div
-                            key={fIdx}
-                            className="flex flex-wrap items-center justify-between text-[11px] gap-2"
-                          >
-                            <span
-                              className="text-yuui-muted font-mono truncate max-w-[70%]"
-                              title={f.path}
-                            >
-                              {f.file_name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {f.resolution && (
-                                <span className="rounded bg-white/5 px-1.5 py-0.5 text-white/70">
-                                  {f.resolution}
-                                </span>
-                              )}
-                              <span className="text-yuui-muted font-mono">
-                                {(f.size_bytes / (1024 * 1024 * 1024)).toFixed(
-                                  2,
-                                )}{" "}
-                                GB
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+              <div>
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
+                  Library Health
+                </span>
+                <div className="mt-2 text-2xl font-bold font-display text-white">
+                  {stats.libraryHealth}%
                 </div>
+                <div className="mt-2 w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-yuui-accent to-yuui-accent2 rounded-full"
+                    style={{ width: `${stats.libraryHealth}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-yuui-muted">
+                  Percent of fully completed series
+                </p>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Filter selectors grid */}
-        <div className="flex flex-col gap-3 px-6 py-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between border border-white/[0.04]">
-              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider mr-2 shrink-0">
-                Card Size
+              <div>
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">
+                  Disk Cleanup
+                </span>
+                <div className="mt-2 text-2xl font-bold font-display text-white">
+                  {duplicates.length}{" "}
+                  <span className="text-xs font-semibold text-yuui-muted font-sans">
+                    Dupes
+                  </span>
+                </div>
+                {duplicates.length > 0 ? (
+                  <button
+                    onClick={() => setShowDuplicatesList(!showDuplicatesList)}
+                    className="mt-2 glass rounded-xl px-3 py-1 text-[10px] font-semibold text-yuui-accent hover:bg-yuui-accent/15 transition-colors cursor-pointer select-none"
+                  >
+                    {showDuplicatesList ? "Hide Duplicates" : "View Duplicates"}
+                  </button>
+                ) : (
+                  <p className="mt-1 text-[11px] text-yuui-muted mt-2">
+                    No duplicate episodes
+                  </p>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Duplicate list details */}
+      <AnimatePresence>
+        {showStats && showDuplicatesList && duplicates.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden px-0 mt-2"
+          >
+            <div className="glass rounded-3xl border border-white/[0.06] bg-yuui-surface/40 p-5 space-y-4 max-h-[300px] overflow-y-auto">
+              <h3 className="font-display text-sm font-bold text-white flex items-center gap-2 select-none">
+                <Layers className="h-4 w-4 text-yuui-accent" /> Duplicate Files
+                Found
+              </h3>
+              <p className="text-xs text-yuui-muted">
+                These episodes have multiple video files in your library folder.
+                You can clean them up to free space.
+              </p>
+              <div className="divide-y divide-white/[0.04] space-y-3 pt-2">
+                {duplicates.map((d, idx) => (
+                  <div key={idx} className="pt-3 first:pt-0">
+                    <span className="text-xs font-bold text-white/90">
+                      {d.seriesTitle} — Episode {d.episode}
+                    </span>
+                    <div className="mt-2 space-y-1.5 pl-3 border-l border-white/[0.06]">
+                      {d.files.map((f, fIdx) => (
+                        <div
+                          key={fIdx}
+                          className="flex flex-wrap items-center justify-between text-[11px] gap-2"
+                        >
+                          <span
+                            className="text-yuui-muted font-mono truncate max-w-[70%]"
+                            title={f.path}
+                          >
+                            {f.file_name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {f.resolution && (
+                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-white/70">
+                                {f.resolution}
+                              </span>
+                            )}
+                            <span className="text-yuui-muted font-mono">
+                              {(f.size_bytes / (1024 * 1024 * 1024)).toFixed(2)}{" "}
+                              GB
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Filter selectors grid */}
+      <div className="flex flex-col gap-2 px-0 py-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between border border-white/[0.04]">
+            <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider mr-2 shrink-0">
+              Card Size
+            </span>
+            <div className="flex-1 flex items-center gap-2">
+              <input
+                type="range"
+                min="140"
+                max="260"
+                value={cardSize}
+                onChange={(e) => setCardSize(Number(e.target.value))}
+                className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent"
+              />
+              <span className="text-[10px] text-white font-semibold font-mono w-8 text-right shrink-0">
+                {cardSize}px
               </span>
-              <div className="flex-1 flex items-center gap-2">
-                <input
-                  type="range"
-                  min="140"
-                  max="260"
-                  value={cardSize}
-                  onChange={(e) => setCardSize(Number(e.target.value))}
-                  className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent"
+            </div>
+          </div>
+
+          {/* Status Dropdown */}
+          <div className="relative">
+            <div
+              onClick={() =>
+                setActiveDropdown(activeDropdown === "status" ? null : "status")
+              }
+              className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
+            >
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
+                Status
+              </span>
+              <span className="flex items-center gap-1 text-xs text-white font-semibold capitalize">
+                {statusFilter === "ALL" ? "All" : statusFilter.toLowerCase()}
+                <ChevronDown className="h-3 w-3 text-yuui-muted" />
+              </span>
+            </div>
+
+            {activeDropdown === "status" && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setActiveDropdown(null)}
                 />
-                <span className="text-[10px] text-white font-semibold font-mono w-8 text-right shrink-0">
-                  {cardSize}px
-                </span>
-              </div>
-            </div>
-
-            {/* Status Dropdown */}
-            <div className="relative">
-              <div
-                onClick={() =>
-                  setActiveDropdown(
-                    activeDropdown === "status" ? null : "status",
-                  )
-                }
-                className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
-              >
-                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
-                  Status
-                </span>
-                <span className="flex items-center gap-1 text-xs text-white font-semibold capitalize">
-                  {statusFilter === "ALL" ? "All" : statusFilter.toLowerCase()}
-                  <ChevronDown className="h-3 w-3 text-yuui-muted" />
-                </span>
-              </div>
-
-              {activeDropdown === "status" && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setActiveDropdown(null)}
-                  />
-                  <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
-                    {[
-                      { val: "ALL", label: "All" },
-                      { val: "WATCHING", label: "Watching" },
-                      { val: "COMPLETED", label: "Completed" },
-                      { val: "PLANNING", label: "Planning" },
-                      { val: "PAUSED", label: "Paused" },
-                      { val: "DROPPED", label: "Dropped" },
-                    ].map((opt) => (
-                      <div
-                        key={opt.val}
-                        onClick={() => {
-                          setStatusFilter(opt.val);
-                          setActiveDropdown(null);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
-                          statusFilter === opt.val
-                            ? "text-accent bg-accent/15 font-bold"
-                            : "text-neutral-300 hover:text-white"
-                        }`}
-                      >
-                        {opt.label}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Format Dropdown */}
-            <div className="relative">
-              <div
-                onClick={() =>
-                  setActiveDropdown(
-                    activeDropdown === "format" ? null : "format",
-                  )
-                }
-                className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
-              >
-                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
-                  Format
-                </span>
-                <span className="flex items-center gap-1 text-xs text-white font-semibold">
-                  {formatFilter === "ALL" ? "All" : formatFilter}
-                  <ChevronDown className="h-3 w-3 text-yuui-muted" />
-                </span>
-              </div>
-
-              {activeDropdown === "format" && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setActiveDropdown(null)}
-                  />
-                  <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
-                    {[
-                      { val: "ALL", label: "All" },
-                      { val: "TV", label: "TV" },
-                      { val: "MOVIE", label: "Movie" },
-                      { val: "OVA", label: "OVA" },
-                      { val: "ONA", label: "ONA" },
-                      { val: "SPECIAL", label: "Special" },
-                    ].map((opt) => (
-                      <div
-                        key={opt.val}
-                        onClick={() => {
-                          setFormatFilter(opt.val);
-                          setActiveDropdown(null);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
-                          formatFilter === opt.val
-                            ? "text-accent bg-accent/15 font-bold"
-                            : "text-neutral-300 hover:text-white"
-                        }`}
-                      >
-                        {opt.label}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Group Dropdown */}
-            <div className="relative">
-              <div
-                onClick={() =>
-                  setActiveDropdown(activeDropdown === "group" ? null : "group")
-                }
-                className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
-              >
-                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
-                  Group
-                </span>
-                <span className="flex items-center gap-1 text-xs text-white font-semibold truncate max-w-[80px]">
-                  {groupFilter === "ALL" ? "All" : groupFilter}
-                  <ChevronDown className="h-3 w-3 text-yuui-muted" />
-                </span>
-              </div>
-
-              {activeDropdown === "group" && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setActiveDropdown(null)}
-                  />
-                  <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+                <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
+                  {[
+                    { val: "ALL", label: "All" },
+                    { val: "WATCHING", label: "Watching" },
+                    { val: "COMPLETED", label: "Completed" },
+                    { val: "PLANNING", label: "Planning" },
+                    { val: "PAUSED", label: "Paused" },
+                    { val: "DROPPED", label: "Dropped" },
+                  ].map((opt) => (
                     <div
+                      key={opt.val}
                       onClick={() => {
-                        setGroupFilter("ALL");
+                        setStatusFilter(opt.val);
                         setActiveDropdown(null);
                       }}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
-                        groupFilter === "ALL"
+                        statusFilter === opt.val
                           ? "text-accent bg-accent/15 font-bold"
                           : "text-neutral-300 hover:text-white"
                       }`}
                     >
-                      All
+                      {opt.label}
                     </div>
-                    {releaseGroups.map((g) => (
-                      <div
-                        key={g}
-                        onClick={() => {
-                          setGroupFilter(g);
-                          setActiveDropdown(null);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] truncate ${
-                          groupFilter === g
-                            ? "text-accent bg-accent/15 font-bold"
-                            : "text-neutral-300 hover:text-white"
-                        }`}
-                      >
-                        {g}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Format Dropdown */}
+          <div className="relative">
+            <div
+              onClick={() =>
+                setActiveDropdown(activeDropdown === "format" ? null : "format")
+              }
+              className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
+            >
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
+                Format
+              </span>
+              <span className="flex items-center gap-1 text-xs text-white font-semibold">
+                {formatFilter === "ALL" ? "All" : formatFilter}
+                <ChevronDown className="h-3 w-3 text-yuui-muted" />
+              </span>
             </div>
 
-            {/* Sort By Dropdown */}
-            <div className="relative">
-              <div
-                onClick={() =>
-                  setActiveDropdown(activeDropdown === "sort" ? null : "sort")
-                }
-                className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
-              >
-                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
-                  Sort By
-                </span>
-                <span className="flex items-center gap-1 text-xs text-white font-semibold capitalize">
-                  {sortBy === "title"
-                    ? "Title"
-                    : sortBy === "size"
-                      ? "Size"
-                      : sortBy}
-                  <ChevronDown className="h-3 w-3 text-yuui-muted" />
-                </span>
-              </div>
+            {activeDropdown === "format" && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setActiveDropdown(null)}
+                />
+                <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
+                  {[
+                    { val: "ALL", label: "All" },
+                    { val: "TV", label: "TV" },
+                    { val: "MOVIE", label: "Movie" },
+                    { val: "OVA", label: "OVA" },
+                    { val: "ONA", label: "ONA" },
+                    { val: "SPECIAL", label: "Special" },
+                  ].map((opt) => (
+                    <div
+                      key={opt.val}
+                      onClick={() => {
+                        setFormatFilter(opt.val);
+                        setActiveDropdown(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
+                        formatFilter === opt.val
+                          ? "text-accent bg-accent/15 font-bold"
+                          : "text-neutral-300 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
-              {activeDropdown === "sort" && (
-                <>
+          {/* Group Dropdown */}
+          <div className="relative">
+            <div
+              onClick={() =>
+                setActiveDropdown(activeDropdown === "group" ? null : "group")
+              }
+              className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
+            >
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
+                Group
+              </span>
+              <span className="flex items-center gap-1 text-xs text-white font-semibold truncate max-w-[80px]">
+                {groupFilter === "ALL" ? "All" : groupFilter}
+                <ChevronDown className="h-3 w-3 text-yuui-muted" />
+              </span>
+            </div>
+
+            {activeDropdown === "group" && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setActiveDropdown(null)}
+                />
+                <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
                   <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setActiveDropdown(null)}
-                  />
-                  <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
-                    {[
-                      { val: "title", label: "Title (A-Z)" },
-                      { val: "progress", label: "Progress" },
-                      { val: "score", label: "Average Score" },
-                      { val: "size", label: "Disk Size" },
-                    ].map((opt) => (
-                      <div
-                        key={opt.val}
-                        onClick={() => {
-                          setSortBy(opt.val);
-                          setActiveDropdown(null);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
-                          sortBy === opt.val
-                            ? "text-accent bg-accent/15 font-bold"
-                            : "text-neutral-300 hover:text-white"
-                        }`}
-                      >
-                        {opt.label}
-                      </div>
-                    ))}
+                    onClick={() => {
+                      setGroupFilter("ALL");
+                      setActiveDropdown(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
+                      groupFilter === "ALL"
+                        ? "text-accent bg-accent/15 font-bold"
+                        : "text-neutral-300 hover:text-white"
+                    }`}
+                  >
+                    All
                   </div>
-                </>
-              )}
+                  {releaseGroups.map((g) => (
+                    <div
+                      key={g}
+                      onClick={() => {
+                        setGroupFilter(g);
+                        setActiveDropdown(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] truncate ${
+                        groupFilter === g
+                          ? "text-accent bg-accent/15 font-bold"
+                          : "text-neutral-300 hover:text-white"
+                      }`}
+                    >
+                      {g}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Sort By Dropdown */}
+          <div className="relative">
+            <div
+              onClick={() =>
+                setActiveDropdown(activeDropdown === "sort" ? null : "sort")
+              }
+              className="glass rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 border border-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-xs select-none"
+            >
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider">
+                Sort By
+              </span>
+              <span className="flex items-center gap-1 text-xs text-white font-semibold capitalize">
+                {sortBy === "title"
+                  ? "Title"
+                  : sortBy === "size"
+                    ? "Size"
+                    : sortBy}
+                <ChevronDown className="h-3 w-3 text-yuui-muted" />
+              </span>
             </div>
+
+            {activeDropdown === "sort" && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setActiveDropdown(null)}
+                />
+                <div className="absolute top-full mt-1.5 right-0 min-w-full w-max max-w-[200px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
+                  {[
+                    { val: "title", label: "Title (A-Z)" },
+                    { val: "progress", label: "Progress" },
+                    { val: "score", label: "Average Score" },
+                    { val: "size", label: "Disk Size" },
+                  ].map((opt) => (
+                    <div
+                      key={opt.val}
+                      onClick={() => {
+                        setSortBy(opt.val);
+                        setActiveDropdown(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-white/[0.04] ${
+                        sortBy === opt.val
+                          ? "text-accent bg-accent/15 font-bold"
+                          : "text-neutral-300 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
-      {/* END shrink-0 toolbar section */}
 
-      {/* Scrollable body section - only card grid, no dropdowns */}
-      <div className="flex-1 overflow-y-auto px-6 pb-10">
-        {error && (
-          <div className="glass rounded-2xl border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-            {error}
-          </div>
-        )}
+      {/* Body section layout - splits into two columns when searching */}
+      <div className="mt-4 flex gap-6 items-start">
+        {/* Left Side: Main content grid & status messages */}
+        <div className="flex-grow flex-1 min-w-0">
+          {error && (
+            <div className="glass rounded-2xl border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+              {error}
+            </div>
+          )}
 
-        {/* Matched series render live — even while a scan is still running,
-            they appear as soon as the backend confirms a match. The full-screen
-            spinner only shows when we have nothing to display yet. */}
-        {busy && matchedEntries.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-4 py-24">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-yuui-accent" />
-            <p className="text-sm text-yuui-muted">{progress}</p>
-          </div>
-        )}
+          {/* Matched series render live — even while a scan is still running,
+              they appear as soon as the backend confirms a match. The full-screen
+              spinner only shows when we have nothing to display yet. */}
+          {busy && matchedEntries.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-4 py-24">
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-yuui-accent" />
+              <p className="text-sm text-yuui-muted">{progress}</p>
+            </div>
+          )}
 
-        {(matchedEntries.length > 0 || (!busy && status === "ready")) && (
-          <>
-            {filteredAndSorted.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-24 text-center select-none">
-                <EyeOff className="h-12 w-12 text-yuui-muted/50 mb-2" />
-                <p className="text-yuui-muted">
-                  {matchedEntries.length === 0
-                    ? "No anime found in this folder yet."
-                    : "No results match your search."}
-                </p>
-              </div>
-            ) : (
-              <div
-                className="grid gap-5"
-                style={{
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${cardSize}px, 1fr))`,
-                }}
-              >
-                {filteredAndSorted.map((entry, i) => (
-                  <AnimeCard key={entry.key} entry={entry} index={i} />
-                ))}
-              </div>
-            )}
-          </>
+          {(matchedEntries.length > 0 || (!busy && status === "ready")) && (
+            <>
+              {filteredAndSorted.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-24 text-center select-none">
+                  <EyeOff className="h-12 w-12 text-yuui-muted/50 mb-2" />
+                  <p className="text-yuui-muted">
+                    {matchedEntries.length === 0
+                      ? "No anime found in this folder yet."
+                      : "No results match your search."}
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className="grid gap-5"
+                  style={{
+                    gridTemplateColumns: `repeat(auto-fill, minmax(${cardSize}px, 1fr))`,
+                  }}
+                >
+                  {filteredAndSorted.map((entry, i) => (
+                    <AnimeCard key={entry.key} entry={entry} index={i} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Right Side: AniList search panel */}
+        {isSearching && (
+          <aside className="w-[340px] shrink-0">
+            <AniListSearchPanel
+              isSearching={isSearching}
+              isPaused={isPaused}
+              searchProgress={searchProgress}
+              searchHistory={searchHistory}
+              matchedCount={matchedCount}
+              lowConfCount={lowConfCount}
+              notFoundCount={notFoundCount}
+              errorCount={errorCount}
+              onPause={pauseSync}
+              onResume={resumeSync}
+              onCancel={cancelSync}
+            />
+          </aside>
         )}
       </div>
-      {/* END scrollable body */}
-
-      {/* Single docked AniList search panel — right side, advanced list view */}
-      <AniListSearchPanel
-        isSearching={isSearching}
-        isPaused={isPaused}
-        searchProgress={searchProgress}
-        searchHistory={searchHistory}
-        matchedCount={matchedCount}
-        lowConfCount={lowConfCount}
-        notFoundCount={notFoundCount}
-        errorCount={errorCount}
-        onPause={pauseSync}
-        onResume={resumeSync}
-        onCancel={cancelSync}
-      />
 
       {activeVideo && (
         <VideoPlayerOverlay

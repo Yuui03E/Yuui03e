@@ -9,7 +9,9 @@
     color-scheme: dark;
     --background: oklch(0.08 0 0);
     --surface: oklch(0.12 0.01 250 / 0.35); /* Translucent dark slate */
-    --surface-elevated: oklch(0.15 0.01 250 / 0.55); /* Translucent elevated dark slate */
+    --surface-elevated: oklch(
+      0.15 0.01 250 / 0.55
+    ); /* Translucent elevated dark slate */
     --border: oklch(0.24 0.01 250 / 0.35); /* Soft glowing border */
     --foreground: oklch(0.96 0 0);
     --muted-foreground: oklch(0.65 0 0);
@@ -30,8 +32,8 @@
   }
 
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -98,7 +100,9 @@
   background-color: var(--surface-elevated) !important;
   border: 1px solid var(--border) !important;
   border-radius: 12px !important;
-  box-shadow: 0 10px 38px -10px rgba(0, 0, 0, 0.5), 0 10px 20px -15px rgba(0, 0, 0, 0.4) !important;
+  box-shadow:
+    0 10px 38px -10px rgba(0, 0, 0, 0.5),
+    0 10px 20px -15px rgba(0, 0, 0, 0.4) !important;
   backdrop-filter: blur(20px) !important;
   color: var(--foreground) !important;
   padding: 8px !important;
