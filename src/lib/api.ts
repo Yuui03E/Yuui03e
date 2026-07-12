@@ -47,8 +47,8 @@ export async function defaultAnimePath(): Promise<string> {
  * Full pipeline: scan → match → persist → return the hydrated library from the
  * SQLite store. Re-scans are stable (manual matches + user data preserved).
  */
-export async function syncLibrary(path: string): Promise<StoredEntry[]> {
-  return invoke<StoredEntry[]>("sync_library", { path });
+export async function syncLibrary(path: string, prune = true): Promise<StoredEntry[]> {
+  return invoke<StoredEntry[]>("sync_library", { path, prune });
 }
 
 /** Read the persisted library from SQLite (no network — instant startup). */
@@ -93,6 +93,31 @@ export async function getSetting(key: string): Promise<string | null> {
 /** Save a persistent configuration setting to the SQLite store. */
 export async function setSetting(key: string, value: string): Promise<void> {
   return invoke("set_setting", { key, value });
+}
+
+/**
+ * Resolve the highest-resolution background artwork for a series via TMDB.
+ * Returns an ordered list of full-res landscape backdrop URLs (best first), or
+ * an empty array when no TMDB key is set or no confident match exists. Cached
+ * per AniList id in the backend.
+ */
+export async function getBackdrops(
+  anilistId: number,
+  titles: (string | null | undefined)[],
+  year: number | null,
+  format: string | null,
+): Promise<string[]> {
+  return invoke<string[]>("get_backdrops", {
+    anilistId,
+    titles: titles.filter((t): t is string => !!t && t.trim().length > 0),
+    year: year ?? null,
+    format: format ?? null,
+  });
+}
+
+/** Validate a TMDB API key. Resolves with a success message or rejects with an error. */
+export async function testTmdbKey(key: string): Promise<string> {
+  return invoke<string>("test_tmdb_key", { key });
 }
 
 /** Execute generic GraphQL query/mutation against AniList. */
@@ -155,6 +180,14 @@ export async function testAnidbCredentials(
 /** Test if FFmpeg exists at the given path (or on PATH if empty). Returns version string. */
 export async function testFfmpegPath(path: string): Promise<string> {
   return invoke<string>("test_ffmpeg_path", { path });
+}
+
+/** Remove all library entries associated with a folder path, then return
+ * the updated library. No scanning or network calls. */
+export async function removeFolderEntries(
+  folder: string,
+): Promise<StoredEntry[]> {
+  return invoke<StoredEntry[]>("remove_folder_entries", { folder });
 }
 
 // ---------------------------------------------------------------------------

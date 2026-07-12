@@ -1,377 +1,444 @@
-import { useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useLibrary } from "../../store/library";
-import { BarChart3 } from "lucide-react";
+import { 
+  BarChart3, Save, X 
+} from "lucide-react";
 
 export default function StatsPage() {
-  const { entries, folder } = useLibrary();
+  const { entries: localEntries, status: localStatus, saveUserData, init } = useLibrary();
 
-  const stats = useMemo(() => {
+  useEffect(() => {
+    init();
+  }, [init]);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [listFilter, setListFilter] = useState("All");
+  const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
+  const [coverSize, setCoverSize] = useState(64);
+
+  // Quick edit state variables
+  const [editStatus, setEditStatus] = useState("Watching");
+  const [editProgress, setEditProgress] = useState(0);
+  const [editScore, setEditScore] = useState(0);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Map local entries into uniform shape
+  const activeEntries = useMemo(() => {
+    return localEntries.map((e) => ({
+      key: e.key,
+      title: e.media?.title.english || e.media?.title.romaji || e.title,
+      episode_count: e.media?.episodes || e.episode_count,
+      media: e.media,
+      user: e.user || {
+        progress: 0,
+        status: "Untracked",
+        score: 0,
+      },
+    }));
+  }, [localEntries]);
+
+  // Selected entry for Quick Edit
+  const selectedEntry = useMemo(() => {
+    return activeEntries.find((e) => e.key === selectedRowKey) || null;
+  }, [activeEntries, selectedRowKey]);
+
+  // Sync quick edit state
+  useEffect(() => {
+    if (selectedEntry) {
+      setEditStatus(!selectedEntry.user || selectedEntry.user.status === "Untracked" ? "Watching" : (selectedEntry.user.status || "Watching"));
+      setEditProgress(selectedEntry.user?.progress || 0);
+      setEditScore(selectedEntry.user?.score || 0);
+    }
+  }, [selectedRowKey]);
+
+  const handleSaveEdit = async () => {
+    if (!selectedEntry) return;
+    setIsSavingEdit(true);
+    try {
+      await saveUserData(selectedEntry.key, {
+        progress: editProgress,
+        status: editStatus,
+        score: editScore,
+        notes: (selectedEntry as any).user?.notes || "",
+        favorite: (selectedEntry as any).user?.favorite || false,
+      });
+      setSelectedRowKey(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Local metrics calculations
+  const collectionStats = useMemo(() => {
     let totalWatchedEps = 0;
     let totalSize = 0;
     let scoredCount = 0;
     let totalScoreSum = 0;
     let completedCount = 0;
 
-    const genres: Record<string, number> = {};
-    const formats: Record<string, number> = {};
-    const studios: Record<string, number> = {};
+    const genresMap: Record<string, number> = {};
+    const formatsMap: Record<string, number> = {};
 
-    entries.forEach((e) => {
+    localEntries.forEach((e) => {
       const epProgress = e.user?.progress ?? 0;
       totalWatchedEps += epProgress;
 
       const entrySize = e.files.reduce((sum, f: any) => sum + f.size_bytes, 0);
       totalSize += entrySize;
 
-      // Completion (progress equals total episodes or marked completed)
       const maxEps = e.media?.episodes ?? e.episode_count ?? 1;
-      if (e.user?.status === "Completed" || (epProgress >= maxEps && maxEps > 0)) {
+      if (e.user?.status === "Completed" || epProgress >= maxEps) {
         completedCount += 1;
       }
 
-      // Ratings
       if (e.user?.score) {
         scoredCount += 1;
         totalScoreSum += e.user.score;
-      } else if (e.media?.averageScore) {
-        // Fallback to AniList average score (convert 0-100 to 0-10)
-        scoredCount += 1;
-        totalScoreSum += e.media.averageScore / 10;
       }
 
-      // Genres
       if (e.media?.genres) {
         e.media.genres.forEach((g: string) => {
-          genres[g] = (genres[g] || 0) + 1;
+          genresMap[g] = (genresMap[g] || 0) + 1;
         });
       }
 
-      // Formats
       if (e.media?.format) {
-        formats[e.media.format] = (formats[e.media.format] || 0) + 1;
-      } else {
-        formats["UNKNOWN"] = (formats["UNKNOWN"] || 0) + 1;
-      }
-
-      // Studios (Main)
-      const mainStudios = e.media?.studios?.nodes;
-      if (Array.isArray(mainStudios)) {
-        mainStudios.forEach((s: any) => {
-          if (s?.name) {
-            studios[s.name] = (studios[s.name] || 0) + 1;
-          }
-        });
+        formatsMap[e.media.format] = (formatsMap[e.media.format] || 0) + 1;
       }
     });
 
-    const totalHours = Math.round((totalWatchedEps * 24) / 60);
-    const totalDays = (totalHours / 24).toFixed(1);
-
     const averageRating = scoredCount > 0 ? (totalScoreSum / scoredCount).toFixed(1) : "—";
-    const completionRate = entries.length > 0 ? Math.round((completedCount / entries.length) * 100) : 0;
-
-    const topGenres = Object.entries(genres)
+    const completionRate = localEntries.length > 0 ? Math.round((completedCount / localEntries.length) * 100) : 0;
+    
+    const sortedGenres = Object.entries(genresMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
-    const topStudios = Object.entries(studios)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-
-    // Format breakdown for charts
-    const formatBreakdown = Object.entries(formats)
+    const formatBreakdown = Object.entries(formatsMap)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    // Find longest anime in collection
-    const longestAnime = [...entries]
-      .sort((a, b) => b.episode_count - a.episode_count)
-      .slice(0, 5)
-      .map((e) => ({
-        title: e.media?.title.english || e.media?.title.romaji || e.title,
-        episodes: e.episode_count,
-      }));
-
     return {
-      totalDays,
-      totalHours,
+      totalHours: Math.round((totalWatchedEps * 24) / 60),
       totalSize,
       averageRating,
       completionRate,
-      topGenres,
-      topStudios,
+      topGenres: sortedGenres,
       formatBreakdown,
-      longestAnime,
       completedCount,
     };
-  }, [entries]);
+  }, [localEntries]);
 
-  // Donut chart configuration
-  const donutData = useMemo(() => {
-    const total = stats.formatBreakdown.reduce((sum, item) => sum + item.count, 0);
-    let cumulativePercent = 0;
-    
-    // Aesthetic Colors for donut slices
-    const sliceColors = [
-      "#7c5cff", // Accent violet
-      "#ff5fa2", // Hot pink
-      "#00e1d9", // Cyan
-      "#f59e0b", // Amber
-      "#10b981", // Emerald
-      "#6b7280", // Gray
-    ];
-
-    return stats.formatBreakdown.map((item, idx) => {
-      const percent = total > 0 ? (item.count / total) * 100 : 0;
-      const startPercent = cumulativePercent;
-      cumulativePercent += percent;
-
-      // Coordinate math for SVG pie slice (donut)
-      const getCoordinatesForPercent = (p: number) => {
-        const x = Math.cos(2 * Math.PI * p);
-        const y = Math.sin(2 * Math.PI * p);
-        return [x, y];
-      };
-
-      const [startX, startY] = getCoordinatesForPercent(startPercent / 100);
-      const [endX, endY] = getCoordinatesForPercent(cumulativePercent / 100);
-      const largeArcFlag = percent > 50 ? 1 : 0;
-
-      // Radius is 1, donut path
-      const pathData = total > 0 ? [
-        `M ${startX} ${startY}`,
-        `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
-        `L 0 0`,
-      ].join(" ") : "";
-
-      return {
-        ...item,
-        percent: percent.toFixed(1),
-        pathData,
-        color: sliceColors[idx % sliceColors.length],
-      };
+  // Filter local database grid
+  const filteredMiddleList = useMemo(() => {
+    return activeEntries.filter((e) => {
+      if (listFilter === "Watching" && e.user?.status !== "Watching") return false;
+      if (listFilter === "Completed" && e.user?.status !== "Completed") return false;
+      if (listFilter === "Planning" && e.user?.status !== "Planning") return false;
+      
+      if (searchQuery.trim()) {
+        const titleText = (e.title || "").toLowerCase();
+        return titleText.includes(searchQuery.toLowerCase());
+      }
+      return true;
     });
-  }, [stats.formatBreakdown]);
+  }, [activeEntries, listFilter, searchQuery]);
+
+  const watchingCount = useMemo(() => activeEntries.filter((e) => e.user?.status === "Watching").length, [activeEntries]);
+  const completedCount = useMemo(() => activeEntries.filter((e) => e.user?.status === "Completed").length, [activeEntries]);
+  const planningCount = useMemo(() => activeEntries.filter((e) => e.user?.status === "Planning").length, [activeEntries]);
+
+  if (localStatus === "loading") {
+    return (
+      <div className="p-8 space-y-6 h-full overflow-y-auto">
+        <div className="h-16 glass bg-yuui-surface/20 border border-white/[0.05] rounded-3xl animate-pulse" />
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="h-96 glass bg-yuui-surface/20 border border-white/[0.05] rounded-3xl animate-pulse" />
+          <div className="h-96 glass bg-yuui-surface/20 border border-white/[0.05] rounded-3xl animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto px-6 pt-5 pb-8">
-      {/* Header */}
-      <div>
-        <motion.h1
-          initial={{ opacity: 0, x: -12 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="font-display text-4xl font-bold"
-        >
-          Collection <span className="text-gradient">Statistics</span>
-        </motion.h1>
-        <p className="mt-1 text-sm text-yuui-muted">
-          {folder || "No folder configured"}
-        </p>
-      </div>
-
-      {entries.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-          <BarChart3 className="h-12 w-12 text-yuui-muted/50 mb-2 select-none" />
-          <h2 className="text-lg font-semibold text-white/95">No data available</h2>
-          <p className="text-sm text-yuui-muted max-w-sm">
-            Configure an anime folder in settings and run a sync to generate detailed statistics.
-          </p>
+    <div className="flex h-full flex-col p-6 overflow-y-auto text-white space-y-5 select-none scrollbar-thin">
+      
+      {/* Profile Header Banner */}
+      <motion.header 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col md:flex-row md:items-center gap-6 p-6 rounded-3xl glass border border-white/[0.05] bg-yuui-surface/40 relative overflow-hidden shrink-0"
+      >
+        <div className="absolute top-0 right-0 w-64 h-32 bg-yuui-accent/5 blur-3xl rounded-full" />
+        
+        <div className="flex items-center gap-5 relative z-10 shrink-0">
+          <div className="h-16 w-16 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 flex items-center justify-center text-2xl text-yuui-muted shrink-0 select-none">
+            📊
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-white tracking-tight leading-none font-display">
+              Collection Statistics
+            </h1>
+            <div className="flex items-center gap-2.5 mt-1.5">
+              <span className="text-[9.5px] font-bold text-yuui-muted bg-white/5 rounded-md px-2 py-0.5 border border-white/[0.03] select-none">
+                Local Mode Only
+              </span>
+            </div>
+          </div>
         </div>
-      ) : (
-        <div className="mt-8 grid gap-6 max-w-5xl">
-          {/* Metrics summary row */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 }}
-              className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20"
-            >
-              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Total Watch Time</span>
-              <div className="mt-2 text-2xl font-bold font-display text-white">
-                {stats.totalDays} <span className="text-xs font-semibold text-yuui-muted font-sans">Days</span>
-              </div>
-              <p className="mt-1 text-[10px] text-yuui-muted">~{stats.totalHours} estimated hours</p>
-            </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20"
-            >
-              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Average Rating</span>
-              <div className="mt-2 text-2xl font-bold font-display text-white">
-                {stats.averageRating} <span className="text-xs font-semibold text-yuui-muted font-sans">/ 10</span>
-              </div>
-              <p className="mt-1 text-[10px] text-yuui-muted">Based on your ratings & AniList</p>
-            </motion.div>
+        {/* Quick Stats badges */}
+        <div className="flex flex-wrap items-center gap-3 relative z-10 max-w-2xl select-none md:ml-6">
+          <div className="glass rounded-xl px-2.5 py-1 border border-white/[0.04] bg-[#1a1d27]/40 flex flex-col min-w-[70px] text-center shrink-0">
+            <span className="text-sm font-black text-yuui-accent font-display">{activeEntries.length}</span>
+            <span className="text-[8px] text-yuui-muted font-bold uppercase tracking-wider">Total</span>
+          </div>
+          <div className="glass rounded-xl px-2.5 py-1 border border-white/[0.04] bg-[#1a1d27]/40 flex flex-col min-w-[70px] text-center shrink-0">
+            <span className="text-sm font-black text-pink-400 font-display">{completedCount}</span>
+            <span className="text-[8px] text-yuui-muted font-bold uppercase tracking-wider">Done</span>
+          </div>
+          <div className="glass rounded-xl px-2.5 py-1 border border-white/[0.04] bg-[#1a1d27]/40 flex flex-col min-w-[70px] text-center shrink-0">
+            <span className="text-sm font-black text-white font-display">{collectionStats.totalHours}</span>
+            <span className="text-[8px] text-yuui-muted font-bold uppercase tracking-wider">Hours</span>
+          </div>
+          <div className="glass rounded-xl px-2.5 py-1 border border-white/[0.04] bg-[#1a1d27]/40 flex flex-col min-w-[70px] text-center shrink-0">
+            <span className="text-sm font-black text-pink-400 font-display">{collectionStats.averageRating}</span>
+            <span className="text-[8px] text-yuui-muted font-bold uppercase tracking-wider">Rating</span>
+          </div>
+          
+          {/* Cover Scale Slider */}
+          <div className="glass rounded-xl px-3 py-1 border border-white/[0.04] bg-[#1a1d27]/40 flex items-center gap-2 shrink-0 h-[38px]">
+            <span className="text-[9.5px] text-yuui-muted font-bold uppercase tracking-wider select-none">Cover Size</span>
+            <input 
+              type="range" 
+              min="40" 
+              max="140" 
+              value={coverSize} 
+              onChange={(e) => setCoverSize(parseInt(e.target.value))} 
+              className="w-20 accent-yuui-accent cursor-pointer h-1 rounded-lg bg-white/10"
+            />
+            <span className="text-[9.5px] font-mono font-bold text-white w-8 text-right select-none">{coverSize}px</span>
+          </div>
+        </div>
+      </motion.header>
 
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20"
+      {/* Grid Content Canvas */}
+      <div className="grid grid-cols-12 gap-5 items-start flex-grow min-h-0 overflow-hidden" style={{ maxHeight: "80vh" }}>
+        
+        {/* LEFT COLUMN: Sidebar Navigation & Filters */}
+        <div className="col-span-3 flex flex-col gap-4 overflow-y-auto pr-1 h-full select-none">
+          
+          <div className="glass rounded-3xl p-3.5 border border-white/[0.05] bg-yuui-surface/40 space-y-1">
+            <span className="text-[9px] font-bold text-yuui-muted uppercase tracking-wider block px-2.5 mb-1.5 font-display">Collections</span>
+            
+            <button
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-yuui-accent/15 border-l-2 border-yuui-accent text-left"
             >
-              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Completion Rate</span>
-              <div className="mt-2 text-2xl font-bold font-display text-white">
-                {stats.completionRate}%
-              </div>
-              <p className="mt-1 text-[10px] text-yuui-muted">{stats.completedCount} / {entries.length} completed</p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20"
-            >
-              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Library Size</span>
-              <div className="mt-2 text-2xl font-bold font-display text-white">
-                {(stats.totalSize / (1024 * 1024 * 1024)).toFixed(1)} <span className="text-xs font-semibold text-yuui-muted font-sans">GB</span>
-              </div>
-              <p className="mt-1 text-[10px] text-yuui-muted">
-                {(stats.totalSize / (1024 * 1024 * 1024 * 1024)).toFixed(2)} TB total local disk storage
-              </p>
-            </motion.div>
+              <BarChart3 className="h-4 w-4 text-yuui-accent" />
+              <span>Local Statistics</span>
+            </button>
           </div>
 
-          {/* Graphical charts grid */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Top Genres bar chart */}
-            <motion.section
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 }}
-              className="glass rounded-3xl p-6 border border-white/[0.05] bg-yuui-surface/25 flex flex-col justify-between"
-            >
-              <div>
-                <h2 className="text-sm font-bold text-white/90 uppercase tracking-wider font-display mb-4">Top Genres</h2>
+          <div className="flex-grow flex flex-col gap-4 min-h-0">
+            <div className="space-y-4">
+              {selectedEntry ? (
+                /* QUICK EDIT DRAWER */
+                <div className="glass rounded-3xl p-5 border border-yuui-accent bg-yuui-surface/60 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-yuui-accent font-bold uppercase tracking-wider">Quick Editor</span>
+                    <button onClick={() => setSelectedRowKey(null)} className="text-yuui-muted hover:text-white cursor-pointer"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-white leading-tight line-clamp-2">{selectedEntry.title}</h4>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-yuui-muted uppercase font-bold tracking-wider">Status</label>
+                    <select 
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                      className="w-full bg-[#11131a]/60 border border-white/[0.05] rounded-xl px-2.5 py-1.5 text-xs text-white outline-none cursor-pointer"
+                    >
+                      <option value="Watching">Watching</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Planning">Planning</option>
+                      <option value="Paused">Paused</option>
+                      <option value="Dropped">Dropped</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-yuui-muted uppercase font-bold tracking-wider">Progress</label>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setEditProgress(Math.max(0, editProgress - 1))} className="h-8 w-8 rounded-lg bg-white/5 border border-white/[0.05] hover:bg-white/10 flex items-center justify-center text-white cursor-pointer">-</button>
+                      <input type="number" value={editProgress} onChange={(e) => setEditProgress(Math.min(selectedEntry.episode_count, Math.max(0, parseInt(e.target.value) || 0)))} className="flex-1 bg-[#11131a]/60 border border-white/[0.05] rounded-lg px-2 py-1.5 text-center text-xs text-white outline-none font-mono" />
+                      <button onClick={() => setEditProgress(Math.min(selectedEntry.episode_count, editProgress + 1))} className="h-8 w-8 rounded-lg bg-white/5 border border-white/[0.05] hover:bg-white/10 flex items-center justify-center text-white cursor-pointer">+</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-yuui-muted uppercase font-bold tracking-wider">Score (0-10)</label>
+                    <div className="flex items-center gap-2">
+                      <input type="range" min="0" max="10" step="0.5" value={editScore} onChange={(e) => setEditScore(parseFloat(e.target.value))} className="flex-1 accent-yuui-accent cursor-pointer" />
+                      <span className="text-xs font-bold text-pink-400 font-mono w-8 text-right">★{editScore || "—"}</span>
+                    </div>
+                  </div>
+                  <button onClick={handleSaveEdit} disabled={isSavingEdit} className="w-full rounded-xl py-2 text-xs font-semibold text-white bg-gradient-to-r from-yuui-accent to-yuui-accent2 hover:scale-[1.02] shadow-glow transition-all cursor-pointer flex items-center justify-center gap-1.5">
+                    <Save className="h-3.5 w-3.5" />
+                    {isSavingEdit ? "Saving..." : "Save Local Details"}
+                  </button>
+                </div>
+              ) : (
+                /* DATABASE FILTERS */
                 <div className="space-y-4">
-                  {stats.topGenres.map(([genre, count], idx) => {
-                    const maxCount = stats.topGenres[0]?.[1] || 1;
-                    const pct = (count / maxCount) * 100;
-                    return (
-                      <div key={genre} className="space-y-1">
-                        <div className="flex justify-between text-xs font-semibold">
-                          <span className="text-white/80">{genre}</span>
-                          <span className="text-yuui-muted">{count} titles</span>
-                        </div>
-                        <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 + idx * 0.05 }}
-                            className="h-full bg-gradient-to-r from-yuui-accent to-yuui-accent2 rounded-full"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {stats.topGenres.length === 0 && <p className="text-xs text-yuui-muted">No genres indexed</p>}
-                </div>
-              </div>
-            </motion.section>
-
-            {/* Format Distribution donut chart */}
-            <motion.section
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="glass rounded-3xl p-6 border border-white/[0.05] bg-yuui-surface/25 flex flex-col justify-between"
-            >
-              <div>
-                <h2 className="text-sm font-bold text-white/90 uppercase tracking-wider font-display mb-4">Format Distribution</h2>
-                <div className="flex items-center gap-6">
-                  {/* SVG Donut */}
-                  <div className="relative h-28 w-28 shrink-0">
-                    <svg viewBox="-1.1 -1.1 2.2 2.2" className="h-full w-full -rotate-90">
-                      {donutData.length === 0 ? (
-                        <circle r="1" fill="none" stroke="#222" strokeWidth="0.3" />
-                      ) : (
-                        donutData.map((item, idx) => (
-                          <path
-                            key={idx}
-                            d={item.pathData}
-                            fill={item.color}
-                          />
-                        ))
-                      )}
-                      {/* Inner mask cutout */}
-                      <circle r="0.65" fill="#09090f" />
-                    </svg>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block px-1">Filter</label>
+                    <input
+                      type="text"
+                      placeholder="Search local library..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white outline-none border border-white/[0.05] bg-white/[0.01] focus:border-yuui-accent/60 transition-colors"
+                    />
                   </div>
-
-                  {/* Legends list */}
-                  <div className="flex-1 space-y-2">
-                    {donutData.map((item) => (
-                      <div key={item.name} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                          <span className="text-white/80 font-medium">{item.name}</span>
-                        </div>
-                        <span className="text-yuui-muted font-mono">{item.percent}% <span className="text-[10px]">({item.count})</span></span>
-                      </div>
-                    ))}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block px-1">Lists</label>
+                    <div className="space-y-1">
+                      {["All", "Watching", "Completed", "Planning"].map((tabName) => {
+                        const count = tabName === "All" ? activeEntries.length :
+                                      tabName === "Watching" ? watchingCount :
+                                      tabName === "Completed" ? completedCount :
+                                      planningCount;
+                        return (
+                          <div 
+                            key={tabName}
+                            onClick={() => setListFilter(tabName)}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-200 ${
+                              listFilter === tabName ? "text-white bg-yuui-accent/10 border-l-2 border-yuui-accent" : "text-yuui-muted hover:text-white hover:bg-white/[0.02]"
+                            }`}
+                          >
+                            <span>{tabName} Library</span>
+                            <span className="text-[10px] font-mono">{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </motion.section>
-          </div>
-
-          {/* Bottom lists (Studios + Longest Anime) */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Top Studios */}
-            <motion.section
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35 }}
-              className="glass rounded-3xl p-6 border border-white/[0.05] bg-yuui-surface/25"
-            >
-              <h2 className="text-sm font-bold text-white/90 uppercase tracking-wider font-display mb-4">Top Studios</h2>
-              <div className="divide-y divide-white/[0.04] space-y-2.5">
-                {stats.topStudios.map(([studio, count], idx) => (
-                  <div key={studio} className="flex items-center justify-between text-xs pt-2.5 first:pt-0">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold font-mono text-yuui-accent w-4">#{idx + 1}</span>
-                      <span className="text-white/80 font-medium">{studio}</span>
-                    </div>
-                    <span className="text-yuui-muted font-mono">{count} matching titles</span>
-                  </div>
-                ))}
-                {stats.topStudios.length === 0 && (
-                  <p className="text-xs text-yuui-muted pt-2">No studios indexed</p>
-                )}
-              </div>
-            </motion.section>
-
-            {/* Longest Anime */}
-            <motion.section
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="glass rounded-3xl p-6 border border-white/[0.05] bg-yuui-surface/25"
-            >
-              <h2 className="text-sm font-bold text-white/90 uppercase tracking-wider font-display mb-4">Largest Series</h2>
-              <div className="divide-y divide-white/[0.04] space-y-2.5">
-                {stats.longestAnime.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs pt-2.5 first:pt-0 gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xs font-bold font-mono text-yuui-accent2 w-4">#{idx + 1}</span>
-                      <span className="text-white/80 font-medium truncate">{item.title}</span>
-                    </div>
-                    <span className="text-yuui-muted font-mono shrink-0">{item.episodes} episodes</span>
-                  </div>
-                ))}
-                {stats.longestAnime.length === 0 && (
-                  <p className="text-xs text-yuui-muted pt-2">No video files found</p>
-                )}
-              </div>
-            </motion.section>
+              )}
+            </div>
           </div>
         </div>
-      )}
+
+        {/* RIGHT CANVAS: Local Stats and Series Grid (col-span-9) */}
+        <div className="col-span-9 h-full min-h-0 overflow-hidden flex flex-col gap-5">
+          {/* Top Row Stats Metrics Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
+            <div className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20">
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Watch Hours</span>
+              <div className="mt-2 text-2xl font-bold font-display text-white">
+                {collectionStats.totalHours}{" "}
+                <span className="text-xs font-semibold text-yuui-muted">Hours</span>
+              </div>
+            </div>
+            <div className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20">
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Average Rating</span>
+              <div className="mt-2 text-2xl font-bold font-display text-white">{collectionStats.averageRating} <span className="text-xs font-semibold text-yuui-muted">/ 10</span></div>
+            </div>
+            <div className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20">
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Completion Rate</span>
+              <div className="mt-2 text-2xl font-bold font-display text-white">{collectionStats.completionRate}%</div>
+            </div>
+            <div className="glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/20">
+              <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider block">Library Storage</span>
+              <div className="mt-2 text-2xl font-bold font-display text-white">{(collectionStats.totalSize / (1024 * 1024 * 1024)).toFixed(1)} <span className="text-xs font-semibold text-yuui-muted">GB</span></div>
+            </div>
+          </div>
+
+          {/* Bottom Columns: Grid List & Genre breakdown */}
+          <div className="flex-1 grid grid-cols-12 gap-5 min-h-0 overflow-hidden">
+            {/* Local Database Grid List (col-span-8) */}
+            <div className="col-span-8 glass rounded-3xl border border-white/[0.05] bg-yuui-surface/40 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-3.5 border-b border-white/[0.04] flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-bold text-yuui-muted uppercase tracking-wider font-display">{listFilter} Database Grid</span>
+                <span className="text-[9px] text-yuui-accent font-semibold">{filteredMiddleList.length} titles listed</span>
+              </div>
+              
+              <div className="flex-grow overflow-y-auto p-4 space-y-2.5 scrollbar-thin">
+                {filteredMiddleList.map((e) => {
+                  const currentProgress = e.user?.progress ?? 0;
+                  const max = e.media?.episodes ?? e.episode_count;
+                  const isSelected = selectedRowKey === e.key;
+                  return (
+                    <div 
+                      key={e.key}
+                      onClick={() => setSelectedRowKey(isSelected ? null : e.key)}
+                      className={`flex items-center gap-4 p-3 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected 
+                          ? "bg-yuui-accent/15 border-yuui-accent/60 shadow-glow font-bold" 
+                          : "bg-[#161821]/40 border-white/[0.03] hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <div className="shrink-0 flex items-center justify-center">
+                        <img 
+                          src={(e.media?.coverImage as any)?.large || (e.media?.coverImage as any)?.medium || "https://s4.anilist.co/file/anilist/user/avatar/large/default.png"} 
+                          alt="cover" 
+                          className="rounded-xl object-cover border border-white/10 shadow-md shrink-0" 
+                          style={{ height: `${coverSize}px`, width: `${coverSize * 0.7}px` }}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 flex flex-col justify-center gap-1.5">
+                        <span className="block truncate text-xs font-semibold text-white max-w-[360px]" title={e.title}>
+                          {e.title}
+                        </span>
+                        <div className="h-1.5 w-32 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-yuui-accent to-pink-500 rounded-full" style={{ width: `${(currentProgress / max) * 100}%` }} />
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-center w-14">
+                        <span className="text-[9px] text-yuui-muted font-bold uppercase tracking-wider block mb-0.5">Score</span>
+                        <span className="text-xs text-pink-400 font-bold font-mono">{e.user?.score ? `★ ${e.user.score}` : "—"}</span>
+                      </div>
+                      <div className="shrink-0 text-center w-18">
+                        <span className="text-[9px] text-yuui-muted font-bold uppercase tracking-wider block mb-0.5">Progress</span>
+                        <span className="text-xs text-white font-mono">{currentProgress} / {max}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredMiddleList.length === 0 && (
+                  <div className="text-center py-16 text-xs text-yuui-muted select-none">No library entries found.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Genre breakdown card (col-span-4) */}
+            <div className="col-span-4 glass rounded-3xl p-5 border border-white/[0.05] bg-yuui-surface/40 flex flex-col overflow-y-auto scrollbar-thin">
+              <h3 className="text-xs font-bold text-white/90 uppercase tracking-wider font-display mb-4">Collection Genres</h3>
+              <div className="space-y-4">
+                {collectionStats.topGenres.map(([genre, count]) => {
+                  const max = collectionStats.topGenres[0]?.[1] || 1;
+                  return (
+                    <div key={genre} className="space-y-1">
+                      <div className="flex justify-between text-xs font-semibold">
+                        <span className="text-white/80">{genre}</span>
+                        <span className="text-yuui-muted">{count} titles</span>
+                      </div>
+                      <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-yuui-accent to-yuui-accent2 rounded-full" style={{ width: `${(count / max) * 100}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {collectionStats.topGenres.length === 0 && (
+                  <div className="text-center py-16 text-xs text-yuui-muted">No genres detected in library.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

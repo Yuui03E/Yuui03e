@@ -104,6 +104,12 @@ CREATE TABLE IF NOT EXISTS playback_history (
     duration        REAL NOT NULL DEFAULT 0,    -- seconds
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS backdrop_cache (
+    anilist_id      INTEGER PRIMARY KEY,        -- AniList media id
+    urls            TEXT NOT NULL,              -- JSON array of full-res backdrop URLs
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 "#;
 
 /// Open (creating if needed) the SQLite pool and run migrations.
@@ -802,6 +808,73 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
     )
     .bind(key)
     .bind(value)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// TMDB backdrop cache + id mapping (used by the detail-page background)
+// ---------------------------------------------------------------------------
+
+/// Return the cached AniList → TMDB id link, if we've resolved it before.
+pub async fn get_tmdb_id(pool: &SqlitePool, anilist_id: i64) -> Option<i64> {
+    sqlx::query("SELECT tmdb_id FROM id_mappings WHERE anilist_id = ?")
+        .bind(anilist_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.get::<Option<i64>, _>("tmdb_id"))
+}
+
+/// Persist the resolved AniList → TMDB id link (upsert without clobbering
+/// other id columns for the same AniList id).
+pub async fn put_tmdb_id(pool: &SqlitePool, anilist_id: i64, tmdb_id: i64) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO id_mappings (anilist_id, tmdb_id, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(anilist_id) DO UPDATE SET
+            tmdb_id = excluded.tmdb_id,
+            updated_at = datetime('now')",
+    )
+    .bind(anilist_id)
+    .bind(tmdb_id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Return the cached backdrop URL list for an AniList id, if present.
+pub async fn get_backdrops(pool: &SqlitePool, anilist_id: i64) -> Option<Vec<String>> {
+    let row = sqlx::query("SELECT urls FROM backdrop_cache WHERE anilist_id = ?")
+        .bind(anilist_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()?;
+    let urls: String = row.get("urls");
+    serde_json::from_str(&urls).ok()
+}
+
+/// Store the resolved backdrop URL list for an AniList id. An empty list is
+/// still cached so we don't re-hit TMDB every visit for titles with no match.
+pub async fn put_backdrops(
+    pool: &SqlitePool,
+    anilist_id: i64,
+    urls: &[String],
+) -> Result<(), String> {
+    let payload = serde_json::to_string(urls).unwrap_or_else(|_| "[]".into());
+    sqlx::query(
+        "INSERT INTO backdrop_cache (anilist_id, urls, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(anilist_id) DO UPDATE SET
+            urls = excluded.urls, updated_at = datetime('now')",
+    )
+    .bind(anilist_id)
+    .bind(payload)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;

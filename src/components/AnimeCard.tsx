@@ -13,11 +13,16 @@ function titleOf(e: StoredEntry): string {
 export default function AnimeCard({
   entry,
   index,
+  playbackHistory = [],
 }: {
   entry: StoredEntry;
   index: number;
+  playbackHistory?: any[];
 }) {
   const navigate = useNavigate();
+  const activePlay = playbackHistory.find((item) =>
+    entry.files.some((f: any) => f.path === item.file_path)
+  );
   const cover =
     entry.media?.coverImage.extraLarge || entry.media?.coverImage.large || null;
   const color = entry.media?.coverImage.color || "#7c5cff";
@@ -122,14 +127,30 @@ export default function AnimeCard({
             </div>
           )}
 
-          <div className="absolute bottom-0 left-0 right-0 p-3">
-            <h3 className="line-clamp-2 text-sm font-semibold leading-tight text-white drop-shadow">
-              {title}
-            </h3>
-            <p className="mt-1 text-[11px] text-white/60">
-              {eps} {eps === 1 ? "episode" : "episodes"}
-              {entry.release_groups[0] ? ` · ${entry.release_groups[0]}` : ""}
-            </p>
+          <div className="absolute bottom-0 left-0 right-0 p-3 flex flex-col gap-1.5 justify-end">
+            {activePlay && activePlay.duration > 0 && (
+              <div className="w-full space-y-1">
+                <div className="flex items-center justify-between text-[9px] font-bold text-white/95 drop-shadow">
+                  <span>Resume Ep {activePlay.episode}</span>
+                  <span>{Math.round((activePlay.position / activePlay.duration) * 100)}%</span>
+                </div>
+                <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-yuui-accent to-yuui-accent2 rounded-full"
+                    style={{ width: `${(activePlay.position / activePlay.duration) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            <div>
+              <h3 className="line-clamp-2 text-sm font-semibold leading-tight text-white drop-shadow">
+                {title}
+              </h3>
+              <p className="mt-1 text-[11px] text-white/60">
+                {eps} {eps === 1 ? "episode" : "episodes"}
+                {entry.release_groups[0] ? ` · ${entry.release_groups[0]}` : ""}
+              </p>
+            </div>
           </div>
         </div>
       </motion.div>

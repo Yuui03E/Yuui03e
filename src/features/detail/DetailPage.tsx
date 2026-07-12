@@ -12,6 +12,7 @@ import {
   humanizeEnum,
 } from "../../lib/format";
 import VideoPlayerOverlay from "../../components/VideoPlayerOverlay";
+import { getBackdrops } from "../../lib/api";
 
 const STATUS_OPTIONS = [
   "Watching",
@@ -70,7 +71,8 @@ export default function DetailPage() {
   const { key = "" } = useParams();
   const navigate = useNavigate();
   const decodedKey = decodeURIComponent(key);
-  const { fetchEntry, saveUserData, setActiveBackdrop, entries, syncProgressToAnilist } = useLibrary();
+  const { fetchEntry, saveUserData, setActiveBackdrop, setActiveBackdrops, entries, syncProgressToAnilist } = useLibrary();
+  const imageBackdropEnabled = useLibrary((s) => s.imageBackdropEnabled);
 
   const getTargetKey = (id: number) => {
     const local = entries.find((e) => e.media?.id === id && e.files && e.files.length > 0);
@@ -103,20 +105,50 @@ export default function DetailPage() {
   const media = entry?.media ?? null;
   const title =
     media?.title.english || media?.title.romaji || entry?.title || "Unknown";
-  const banner =
-    media?.bannerImage ||
-    media?.coverImage?.extraLarge ||
-    media?.coverImage?.large ||
-    null;
+  // The AniList banner is a true landscape image — safe as an instant first
+  // frame. The portrait cover is intentionally NOT used here: stretching it
+  // across the background is the low-quality case we're fixing.
+  const banner = media?.bannerImage || null;
+  const mediaId = media?.id ?? null;
 
+  // Instant frame: show the AniList banner immediately (if any) so there's no
+  // blank flash, then upgrade to high-res TMDB backdrops when they resolve.
+  // Only runs when the user has opted into image backdrops; otherwise the app
+  // keeps the live animated shader everywhere.
   useEffect(() => {
-    if (banner) {
-      setActiveBackdrop(banner);
+    if (!imageBackdropEnabled) {
+      setActiveBackdrops([]);
+      return;
     }
+
+    let alive = true;
+    setActiveBackdrops(banner ? [banner] : []);
+
+    if (mediaId) {
+      getBackdrops(
+        mediaId,
+        [media?.title.romaji, media?.title.english, media?.title.native],
+        media?.seasonYear ?? null,
+        media?.format ?? null,
+      )
+        .then((urls) => {
+          if (!alive || urls.length === 0) return;
+          // Lead with the banner (already loaded) then the higher-res TMDB
+          // shots, de-duplicated, for a seamless upgrade.
+          const combined = [banner, ...urls].filter(
+            (u): u is string => !!u,
+          );
+          setActiveBackdrops(Array.from(new Set(combined)));
+        })
+        .catch(() => {
+          /* keep the banner-only fallback on any error */
+        });
+    }
+
     return () => {
-      setActiveBackdrop(null);
+      alive = false;
     };
-  }, [banner, setActiveBackdrop]);
+  }, [imageBackdropEnabled, banner, mediaId, setActiveBackdrops, media?.title.romaji, media?.title.english, media?.title.native, media?.seasonYear, media?.format]);
 
   useEffect(() => {
     let alive = true;
@@ -136,6 +168,10 @@ export default function DetailPage() {
 
   const cover = media?.coverImage.extraLarge || media?.coverImage.large || null;
   const color = media?.coverImage.color || "#7c5cff";
+  // Hero image keeps a graceful fallback chain (banner → cover) since it's a
+  // framed 340px header, not the full-screen background.
+  const heroImage =
+    banner || media?.coverImage?.extraLarge || media?.coverImage?.large || null;
 
   // Fetch MAL details from Jikan dynamically
   const idMal = media?.idMal;
@@ -229,12 +265,12 @@ export default function DetailPage() {
       {/* Hero */}
       <div className="relative">
         <div className="relative h-[340px] w-full overflow-hidden">
-          {banner ? (
+          {heroImage ? (
             <motion.img
               initial={{ scale: 1.08, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.8 }}
-              src={banner}
+              src={heroImage}
               alt=""
               className="h-full w-full object-cover"
             />

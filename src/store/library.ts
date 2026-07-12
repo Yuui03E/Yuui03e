@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import type { AniListMedia, StoredEntry, UserData } from "../lib/types";
 import {
-  defaultAnimePath,
   getEntry,
   getLibrary,
   pickFolder,
@@ -16,6 +15,7 @@ import {
   cancelSync as apiCancelSync,
   pauseSync as apiPauseSync,
   resumeSync as apiResumeSync,
+  removeFolderEntries,
 } from "../lib/api";
 
 type Status = "idle" | "loading" | "scanning" | "matching" | "ready" | "error";
@@ -36,7 +36,14 @@ interface LibraryState {
   status: Status;
   progress: string;
   error: string | null;
-  activeBackdrop: string | null;
+  /** Ordered background artwork for the current detail page. The first entry is
+   *  the instant AniList banner; the rest are higher-res TMDB backdrops that
+   *  crossfade as a slideshow. Empty means "no artwork — show shader only". */
+  activeBackdrops: string[];
+  /** When false (default), the app always shows the live animated shader and
+   *  never swaps in the anime image backdrop on detail pages. */
+  imageBackdropEnabled: boolean;
+  setImageBackdropEnabled: (enabled: boolean) => Promise<void>;
   cardSize: number;
   setCardSize: (size: number) => void;
 
@@ -71,13 +78,17 @@ interface LibraryState {
   pinMatch: (key: string, media: unknown) => Promise<void>;
   /** Search AniList for manual match-fix candidates. */
   searchAnilist: (query: string) => Promise<AniListMedia[]>;
+  /** Set a single backdrop (or clear with null) — convenience wrapper. */
   setActiveBackdrop: (url: string | null) => void;
+  /** Set the full ordered backdrop list for the slideshow. */
+  setActiveBackdrops: (urls: string[]) => void;
 }
 
 async function runSync(
   folder: string,
   set: (partial: Partial<LibraryState>) => void,
   get: () => LibraryState,
+  prune = true,
 ) {
   let unlistenProgress: (() => void) | null = null;
   let unlistenEntry: (() => void) | null = null;
@@ -139,7 +150,7 @@ async function runSync(
       set({ isSearching: false, isPaused: false });
     });
 
-    const entries = await syncLibrary(folder);
+    const entries = await syncLibrary(folder, prune);
     set({ entries, status: "ready", progress: "", isSearching: false, isPaused: false, searchProgress: null });
   } catch (e) {
     set({ status: "error", error: String(e), progress: "", isSearching: false, isPaused: false });
@@ -158,8 +169,16 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   status: "idle",
   progress: "",
   error: null,
-  activeBackdrop: null,
-  setActiveBackdrop: (url) => set({ activeBackdrop: url }),
+  activeBackdrops: [],
+  setActiveBackdrop: (url) => set({ activeBackdrops: url ? [url] : [] }),
+  setActiveBackdrops: (urls) => set({ activeBackdrops: urls }),
+  imageBackdropEnabled: false,
+  setImageBackdropEnabled: async (enabled) => {
+    set({ imageBackdropEnabled: enabled });
+    // Clear any current artwork immediately when turning it off.
+    if (!enabled) set({ activeBackdrops: [] });
+    await setSetting("image_backdrop_enabled", enabled ? "true" : "false");
+  },
   cardSize: Number(localStorage.getItem("yuui_card_size")) || 180,
   setCardSize: (size) => {
     localStorage.setItem("yuui_card_size", String(size));
@@ -214,6 +233,10 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     try {
       set({ status: "loading", progress: "Loading library…" });
 
+      // Load the image-backdrop preference (default off — live animation only).
+      const bdPref = await getSetting("image_backdrop_enabled");
+      set({ imageBackdropEnabled: bdPref === "true" });
+
       // Load AniList user profile if token is set
       const token = await getSetting("anilist_token");
       if (token && token.trim().length > 0) {
@@ -231,11 +254,10 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         }
       }
 
-      // Load library folder from settings if exists, otherwise fallback to default
+      // Load library folder from settings if exists
       let path = await getSetting("library_folder");
       if (!path) {
-        path = await defaultAnimePath();
-        await setSetting("library_folder", path);
+        path = "";
       }
       const folders = path ? path.split(";").filter((p) => p.trim().length > 0) : [];
       set({ folder: path, folders });
@@ -271,11 +293,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   addPaths: async (paths: string[]) => {
     if (get().isSearching) return; // Prevent concurrent syncs — fix for "locked" issue
     const current = get().folders;
-    const updated = Array.from(new Set([...current, ...paths]));
+    const newPaths = paths.filter((p) => !current.includes(p));
+    if (newPaths.length === 0) return; // nothing new to add
+    const updated = Array.from(new Set([...current, ...newPaths]));
     const folderStr = updated.join(";");
     set({ folders: updated, folder: folderStr });
     await setSetting("library_folder", folderStr);
-    await runSync(folderStr, set, get);
+    // ONLY scan the newly added paths, and do NOT prune existing entries!
+    await runSync(newPaths.join(";"), set, get, false);
   },
 
   removePath: async (pathToRemove: string) => {
@@ -284,7 +309,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const folderStr = updated.join(";");
     set({ folders: updated, folder: folderStr });
     await setSetting("library_folder", folderStr);
-    await runSync(folderStr, set, get);
+    // Delete DB entries for this folder directly, then reload what's left
+    try {
+      const entries = await removeFolderEntries(pathToRemove);
+      set({ entries, status: "ready", progress: "" });
+    } catch (e) {
+      // Fallback: rescan if the direct delete fails
+      await runSync(folderStr, set, get);
+    }
   },
 
   rescan: async () => {

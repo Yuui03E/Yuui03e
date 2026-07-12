@@ -371,7 +371,7 @@ async fn anilist_search(
 
 const DETAIL_QUERY: &str = r#"
 query ($id: Int) {
-  Media(id: $id, type: ANIME) {
+  Media(id: $id) {
     id
     idMal
     title { romaji english native }
@@ -448,18 +448,25 @@ pub async fn search_frontend(query: &str) -> Result<Vec<serde_json::Value>, Stri
 
 /// Fetch the full rich detail for one AniList media id.
 /// Uses token if available for higher rate limits.
-pub async fn fetch_detail(media_id: i64) -> Result<serde_json::Value, String> {
-    rate_limit_wait(true).await;
+pub async fn fetch_detail(media_id: i64, token: Option<String>) -> Result<serde_json::Value, String> {
+    let has_token = token.as_ref().map(|t| !t.trim().is_empty()).unwrap_or(false);
+    rate_limit_wait(has_token).await;
 
     let body = serde_json::json!({
         "query": DETAIL_QUERY,
         "variables": { "id": media_id },
     });
 
-    let resp = CLIENT
+    let mut req = CLIENT
         .post(ANILIST_URL)
         .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
+        .header("Accept", "application/json");
+
+    if has_token {
+        req = req.header("Authorization", format!("Bearer {}", token.unwrap().trim()));
+    }
+
+    let resp = req
         .json(&body)
         .send()
         .await
@@ -529,6 +536,7 @@ pub async fn match_series_with_progress(
     series: Vec<ScannedSeries>,
     app: &tauri::AppHandle,
     token: Option<String>,
+    manual_matches: HashMap<String, serde_json::Value>,
     cancel_flag: Arc<AtomicBool>,
     pause_flag: Arc<AtomicBool>,
 ) -> Result<Vec<LibraryEntry>, String> {
@@ -561,6 +569,31 @@ pub async fn match_series_with_progress(
         }
 
         let key = parser::normalize_title(&s.title);
+
+        // If this series already has a manual match, use the cached media JSON and skip API search
+        if let Some(media_val) = manual_matches.get(&key) {
+            let entry = LibraryEntry {
+                key: key.clone(),
+                scanned: s,
+                media: Some(media_val.clone()),
+                confidence: 1.0,
+                matched: true,
+            };
+
+            let _ = app.emit(
+                "sync:searching",
+                SearchProgress {
+                    current: i + 1,
+                    total,
+                    title: entry.scanned.title.clone(),
+                    status: "matched".to_string(),
+                    message: None,
+                },
+            );
+
+            out.push(entry);
+            continue;
+        }
 
         // Emit "searching" event
         let _ = app.emit(

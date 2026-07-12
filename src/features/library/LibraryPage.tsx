@@ -22,15 +22,18 @@ import {
   Play,
   AlertCircle,
   Loader2,
+  Trash2,
+  FolderX,
 } from "lucide-react";
+import { pickMultiplePaths, recentPlayback } from "../../lib/api";
 
 function StatPill({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="glass rounded-2xl px-4 py-3">
-      <div className="font-display text-xl leading-none text-white">
+    <div className="glass rounded-xl px-3 py-2">
+      <div className="font-display text-lg leading-none text-white">
         {value}
       </div>
-      <div className="mt-1 text-[11px] uppercase tracking-wider text-yuui-muted">
+      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-yuui-muted">
         {label}
       </div>
     </div>
@@ -271,7 +274,9 @@ export default function LibraryPage() {
     error,
     folder,
     init,
-    chooseFolder,
+    addPaths,
+    removePath,
+    folders,
     rescan,
     cardSize,
     setCardSize,
@@ -298,6 +303,8 @@ export default function LibraryPage() {
   const [activeDropdown, setActiveDropdown] = useState<
     "status" | "format" | "group" | "sort" | null
   >(null);
+  const [removeFolderOpen, setRemoveFolderOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [activeVideo, setActiveVideo] = useState<{
     path: string;
     episode: number;
@@ -305,13 +312,10 @@ export default function LibraryPage() {
   } | null>(null);
   const navigate = useNavigate();
 
-  const loadHistory = () => {
+  const loadHistory = async () => {
     try {
-      const historyJson = localStorage.getItem("playback_history") || "[]";
-      const parsed = JSON.parse(historyJson);
-      if (Array.isArray(parsed)) {
-        setPlaybackHistory(parsed);
-      }
+      const history = await recentPlayback();
+      setPlaybackHistory(history);
     } catch (err) {
       console.error("Failed to load playback history:", err);
     }
@@ -334,14 +338,14 @@ export default function LibraryPage() {
 
   const activePlaybackHistory = useMemo(() => {
     return playbackHistory.filter((item) =>
-      entries.some((e) => e.files.some((f: any) => f.path === item.filePath)),
+      entries.some((e) => e.files.some((f: any) => f.path === item.file_path)),
     );
   }, [playbackHistory, entries]);
 
   const filteredAndSorted = useMemo(() => {
     // Only matched series belong in the Library grid. Unmatched series live in
     // the Review section until the user pins a match for them.
-    let list = entries.filter((e) => e.matched);
+    let list = entries.filter((e) => e.matched && e.episode_count > 0);
 
     if (query.trim()) {
       const parts = query.split(/\s+/);
@@ -551,7 +555,7 @@ export default function LibraryPage() {
     } else if (currentTab === "CONTINUE_WATCHING") {
       list = list.filter((e) =>
         e.files.some((f: any) =>
-          activePlaybackHistory.some((h) => h.filePath === f.path),
+          activePlaybackHistory.some((h) => h.file_path === f.path),
         ),
       );
     } else if (currentTab === "MOVIES_OVAS") {
@@ -684,11 +688,11 @@ export default function LibraryPage() {
   }, [entries]);
 
   const matchedEntries = useMemo(
-    () => entries.filter((e) => e.matched),
+    () => entries.filter((e) => e.matched && e.episode_count > 0),
     [entries],
   );
   const totalEps = matchedEntries.reduce((n, e) => n + e.episode_count, 0);
-  const needReview = entries.filter((e) => !e.matched).length;
+  const needReview = entries.filter((e) => !e.matched && e.episode_count > 0).length;
   const busy = status === "scanning" || status === "matching";
 
   // Search progress summary
@@ -737,16 +741,16 @@ export default function LibraryPage() {
 
             <div
               onClick={() => navigate("/review")}
-              className={`glass rounded-2xl px-4 py-3 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] ${
+              className={`glass rounded-xl px-3 py-2 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] ${
                 needReview > 0
                   ? "border border-yellow-500/40 bg-yellow-500/5 shadow-glow"
                   : ""
               }`}
             >
-              <div className="font-display text-xl leading-none text-white">
+              <div className="font-display text-lg leading-none text-white">
                 {needReview}
               </div>
-              <div className="mt-1 text-[11px] uppercase tracking-wider text-yuui-muted">
+              <div className="mt-0.5 text-[10px] uppercase tracking-wider text-yuui-muted">
                 Review
               </div>
             </div>
@@ -760,16 +764,16 @@ export default function LibraryPage() {
 
       {/* Top Search Toolbar */}
       <div className="flex flex-col gap-2 px-0 pt-2">
-        <div className="flex items-center gap-2">
-          <div className="glass flex flex-1 items-center gap-2 rounded-2xl px-4 py-2.5">
-            <Search className="h-4 w-4 text-yuui-muted" />
+        <div className="flex items-center gap-1.5">
+          <div className="glass flex flex-1 items-center gap-2 rounded-xl px-3 py-2 min-w-0">
+            <Search className="h-3.5 w-3.5 text-yuui-muted shrink-0" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
               placeholder="Search by title, genre, studio, resolution, favorites..."
-              className="w-full bg-transparent text-sm outline-none placeholder:text-yuui-muted"
+              className="w-full bg-transparent text-xs outline-none placeholder:text-yuui-muted"
             />
             {query && (
               <button
@@ -777,7 +781,7 @@ export default function LibraryPage() {
                   e.preventDefault();
                   setQuery("");
                 }}
-                className="text-yuui-muted hover:text-white text-xs px-1 select-none cursor-pointer"
+                className="text-yuui-muted hover:text-white text-xs px-1 select-none cursor-pointer shrink-0"
               >
                 ✕
               </button>
@@ -787,7 +791,7 @@ export default function LibraryPage() {
           <button
             onClick={rescan}
             disabled={busy || !folder}
-            className="glass rounded-2xl px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.08] disabled:opacity-40"
+            className="glass rounded-xl px-3 py-2 text-xs transition-colors hover:bg-white/[0.08] disabled:opacity-40"
           >
             <span className="flex items-center gap-1.5">
               <RefreshCw
@@ -798,15 +802,75 @@ export default function LibraryPage() {
           </button>
 
           <button
-            onClick={chooseFolder}
+            onClick={async () => {
+              const current = folders;
+              const paths = await pickMultiplePaths(true);
+              if (paths.length === 0) return;
+              const dups = paths.filter((p) => current.includes(p));
+              const newPaths = paths.filter((p) => !current.includes(p));
+              if (newPaths.length > 0) await addPaths(newPaths);
+              if (dups.length > 0) {
+                const msg = dups.length === 1
+                  ? `"${dups[0].split("\\").pop()?.split("/").pop() ?? dups[0]}" is already in your library`
+                  : `${dups.length} folders already exist in your library`;
+                setToastMsg(msg);
+                setTimeout(() => setToastMsg(null), 3500);
+              }
+            }}
             disabled={busy}
-            className="rounded-2xl bg-gradient-to-r from-yuui-accent to-yuui-accent2 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-transform hover:scale-[1.03] disabled:opacity-50"
+            className="glass rounded-xl px-3 py-2 text-xs transition-all duration-300 disabled:opacity-40 cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/15 hover:text-emerald-400 hover:shadow-[0_0_12px_rgba(16,185,129,0.5)]"
           >
             <span className="flex items-center gap-1.5">
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               Add Folder
             </span>
           </button>
+
+          {/* Remove Folder button */}
+          {folders.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setRemoveFolderOpen(!removeFolderOpen)}
+                className={`glass rounded-xl px-3 py-2 text-xs transition-all duration-300 disabled:opacity-40 cursor-pointer ${
+                  removeFolderOpen
+                    ? "border-red-500/80 bg-red-500/20 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.6)]"
+                    : "hover:border-red-500/50 hover:bg-red-500/15 hover:text-red-400 hover:shadow-[0_0_12px_rgba(239,68,68,0.5)]"
+                }`}
+                title="Remove a folder"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove
+                </span>
+              </button>
+
+              {removeFolderOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setRemoveFolderOpen(false)}
+                  />
+                  <div className="absolute top-full mt-1.5 right-0 min-w-[240px] bg-black rounded-2xl p-1 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col gap-0.5">
+                    {folders.map((p) => (
+                      <button
+                        key={p}
+                        onClick={async () => {
+                          await removePath(p);
+                          setRemoveFolderOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-left text-white/80 hover:bg-red-500/10 hover:text-red-400 transition-all cursor-pointer"
+                      >
+                        <FolderX className="h-3.5 w-3.5 shrink-0 text-red-400/60" />
+                        <span className="truncate" title={p}>
+                          {p}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <AnimatePresence>
@@ -1327,7 +1391,12 @@ export default function LibraryPage() {
                   }}
                 >
                   {filteredAndSorted.map((entry, i) => (
-                    <AnimeCard key={entry.key} entry={entry} index={i} />
+                    <AnimeCard
+                      key={entry.key}
+                      entry={entry}
+                      index={i}
+                      playbackHistory={playbackHistory}
+                    />
                   ))}
                 </div>
               )}
@@ -1419,6 +1488,24 @@ export default function LibraryPage() {
           }}
         />
       )}
+
+      {/* Toast notification — bottom-right */}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-6 right-6 z-[100] glass rounded-xl px-4 py-3 border border-yellow-500/30 bg-yellow-500/5 shadow-lg max-w-sm"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="h-4 w-4 text-yellow-400 shrink-0" />
+              <p className="text-xs text-white/90 leading-snug">{toastMsg}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

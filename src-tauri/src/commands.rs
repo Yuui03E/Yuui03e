@@ -58,6 +58,7 @@ pub async fn match_series(series: Vec<ScannedSeries>) -> Result<Vec<LibraryEntry
 #[tauri::command]
 pub async fn sync_library(
     path: String,
+    prune: bool,
     db: State<'_, Db>,
     sync_control: State<'_, SyncControl>,
     app: tauri::AppHandle,
@@ -226,10 +227,29 @@ pub async fn sync_library(
         .await
         .unwrap_or(None);
 
+    // Get all manual matches from the database to skip AniList lookup for them during scan
+    let manual_rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT s.key, m.payload
+         FROM series s
+         JOIN media_cache m ON s.media_id = m.media_id
+         WHERE s.manual = 1"
+    )
+    .fetch_all(&db.0)
+    .await
+    .unwrap_or_default();
+
+    let mut manual_matches = std::collections::HashMap::new();
+    for (key, payload) in manual_rows {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&payload) {
+            manual_matches.insert(key, val);
+        }
+    }
+
     let entries = metadata::match_series_with_progress(
         series,
         &app,
         anilist_token,
+        manual_matches,
         sync_control.cancel.clone(),
         sync_control.pause.clone(),
     )
@@ -260,15 +280,29 @@ pub async fn sync_library(
     }
 
     // 4. Remove entries no longer present in the scan.
-    //    Skip pruning if the sync was cancelled — `entries` then only holds the
-    //    series processed so far, and pruning would wrongly delete the rest.
-    if !sync_control.cancel.load(Ordering::Relaxed) {
+    //    Skip pruning if the sync was cancelled or if prune is false.
+    if prune && !sync_control.cancel.load(Ordering::Relaxed) {
         let scanned_keys: std::collections::HashSet<String> = entries.iter().map(|e| e.key.clone()).collect();
         if scanned_keys.is_empty() {
-            let _ = sqlx::query("DELETE FROM series").execute(&db.0).await;
+            let _ = sqlx::query(
+                "DELETE FROM series
+                 WHERE manual = 0
+                   AND key NOT IN (
+                       SELECT series_key FROM user_data
+                       WHERE status IS NOT NULL OR score IS NOT NULL OR progress > 0 OR notes IS NOT NULL OR favorite = 1
+                   )"
+            ).execute(&db.0).await;
         } else {
             let placeholders = scanned_keys.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let delete_query = format!("DELETE FROM series WHERE key NOT IN ({placeholders})");
+            let delete_query = format!(
+                "DELETE FROM series
+                 WHERE key NOT IN ({placeholders})
+                   AND manual = 0
+                   AND key NOT IN (
+                       SELECT series_key FROM user_data
+                       WHERE status IS NOT NULL OR score IS NOT NULL OR progress > 0 OR notes IS NOT NULL OR favorite = 1
+                   )"
+            );
             let mut q = sqlx::query(&delete_query);
             for k in &scanned_keys {
                 q = q.bind(k);
@@ -276,6 +310,20 @@ pub async fn sync_library(
             let _ = q.execute(&db.0).await;
         }
     }
+    // 5. Update episode_count and release_groups for all remaining series (including setting to 0 for those with no files)
+    let _ = sqlx::query(
+        "UPDATE series SET
+            episode_count = (SELECT COUNT(*) FROM files WHERE files.series_key = series.key),
+            release_groups = COALESCE(
+                (SELECT json_group_array(rg) FROM (
+                    SELECT DISTINCT release_group as rg FROM files
+                    WHERE files.series_key = series.key AND release_group IS NOT NULL
+                )),
+                '[]'
+            )"
+    )
+    .execute(&db.0)
+    .await;
 
     let _ = app.emit("sync:progress", "Finalizing sync...");
     let _ = app.emit("sync:complete", serde_json::json!({"matched": entries.len()}));
@@ -297,13 +345,16 @@ pub async fn get_entry(key: String, db: State<'_, Db>) -> Result<Option<StoredEn
         if let Ok(media_id) = id_str.parse::<i64>() {
             let detail = match db::get_detail(&db.0, media_id).await {
                 Some(d) => Some(d),
-                None => match metadata::fetch_detail(media_id).await {
-                    Ok(d) => {
-                        let _ = db::put_detail(&db.0, media_id, &d).await;
-                        Some(d)
+                None => {
+                    let token = db::get_setting(&db.0, "anilist_token").await.unwrap_or(None);
+                    match metadata::fetch_detail(media_id, token).await {
+                        Ok(d) => {
+                            let _ = db::put_detail(&db.0, media_id, &d).await;
+                            Some(d)
+                        }
+                        Err(_) => None,
                     }
-                    Err(_) => None,
-                },
+                }
             };
             if let Some(d) = detail {
                 let title = d
@@ -345,22 +396,25 @@ pub async fn get_entry(key: String, db: State<'_, Db>) -> Result<Option<StoredEn
     {
         let detail = match db::get_detail(&db.0, media_id).await {
             Some(d) => Some(d),
-            None => match metadata::fetch_detail(media_id).await {
-                Ok(d) => {
-                    let _ = db::put_detail(&db.0, media_id, &d).await;
-                    if let Some(id_mal) = d.get("idMal").and_then(|v| v.as_i64()) {
-                        let _ = sqlx::query(
-                            "INSERT OR REPLACE INTO id_mappings (anilist_id, mal_id) VALUES (?, ?)",
-                        )
-                        .bind(media_id)
-                        .bind(id_mal)
-                        .execute(&db.0)
-                        .await;
+            None => {
+                let token = db::get_setting(&db.0, "anilist_token").await.unwrap_or(None);
+                match metadata::fetch_detail(media_id, token).await {
+                    Ok(d) => {
+                        let _ = db::put_detail(&db.0, media_id, &d).await;
+                        if let Some(id_mal) = d.get("idMal").and_then(|v| v.as_i64()) {
+                            let _ = sqlx::query(
+                                "INSERT OR REPLACE INTO id_mappings (anilist_id, mal_id) VALUES (?, ?)",
+                            )
+                            .bind(media_id)
+                            .bind(id_mal)
+                            .execute(&db.0)
+                            .await;
+                        }
+                        Some(d)
                     }
-                    Some(d)
+                    Err(_) => None,
                 }
-                Err(_) => None,
-            },
+            }
         };
         if let Some(d) = detail {
             entry.media = Some(d);
@@ -412,6 +466,67 @@ pub async fn set_setting(
     db: State<'_, Db>,
 ) -> Result<(), String> {
     db::set_setting(&db.0, &key, &value).await
+}
+
+/// Resolve the highest-resolution background artwork for a series.
+///
+/// AniList only exposes one (often-null) banner, so we match the title against
+/// TMDB and return its full-resolution landscape backdrops (best-first). Results
+/// are cached per AniList id; an empty list is returned (and cached) when no
+/// TMDB key is set or no confident match exists — the UI then keeps the AniList
+/// banner. `titles` should be [romaji, english, native] as available.
+#[tauri::command]
+pub async fn get_backdrops(
+    anilist_id: i64,
+    titles: Vec<String>,
+    year: Option<i64>,
+    format: Option<String>,
+    db: State<'_, Db>,
+) -> Result<Vec<String>, String> {
+    // Serve from cache when we've resolved this series before.
+    if let Some(cached) = db::get_backdrops(&db.0, anilist_id).await {
+        return Ok(cached);
+    }
+
+    let api_key = db::get_setting(&db.0, "tmdb_api_key")
+        .await?
+        .unwrap_or_default();
+    if api_key.trim().is_empty() {
+        return Ok(vec![]); // No key configured — graceful fallback.
+    }
+
+    let kind = crate::tmdb::TmdbKind::from_format(format.as_deref());
+    let title_refs: Vec<&str> = titles.iter().map(|s| s.as_str()).collect();
+
+    // Reuse a previously resolved TMDB id when available; otherwise search.
+    let tmdb_id = match db::get_tmdb_id(&db.0, anilist_id).await {
+        Some(id) => Some(id),
+        None => {
+            let found =
+                crate::tmdb::find_tmdb_id(&api_key, &title_refs, year, kind).await;
+            if let Some(id) = found {
+                let _ = db::put_tmdb_id(&db.0, anilist_id, id).await;
+            }
+            found
+        }
+    };
+
+    let urls = match tmdb_id {
+        Some(id) => crate::tmdb::fetch_backdrops(&api_key, id, kind).await,
+        None => vec![],
+    };
+
+    // Cache even an empty result to avoid re-hitting TMDB on every visit.
+    let _ = db::put_backdrops(&db.0, anilist_id, &urls).await;
+    Ok(urls)
+}
+
+/// Validate a TMDB API key against TMDB's `/configuration` endpoint. Returns a
+/// success message, or an error describing why the key was rejected.
+#[tauri::command]
+pub async fn test_tmdb_key(key: String) -> Result<String, String> {
+    crate::tmdb::validate_key(key.trim()).await?;
+    Ok("TMDB API key verified successfully".to_string())
 }
 
 /// Open a video file in the OS default external media player (e.g., VLC, MPC-HC).
@@ -486,6 +601,81 @@ pub fn resume_sync(sync_control: State<'_, SyncControl>) -> Result<(), String> {
     sync_control.pause.store(false, Ordering::Relaxed);
     Ok(())
 }
+
+/// Remove all library entries whose folder is under the given path, then
+/// return the updated library from what remains. Lightweight — no scanning
+/// or network calls; the DB cascade deletes files, user_data, and history.
+#[tauri::command]
+pub async fn remove_folder_entries(
+    folder: String,
+    db: State<'_, Db>,
+) -> Result<Vec<StoredEntry>, String> {
+    let mut tx = db.0.begin().await.map_err(|e| e.to_string())?;
+
+    let sep = std::path::MAIN_SEPARATOR;
+    let prefix = if folder.ends_with(sep) {
+        folder.clone()
+    } else {
+        format!("{}{}", folder, sep)
+    };
+
+    // Escape wildcards for LIKE pattern using '^' as escape character
+    let escaped_prefix = prefix
+        .replace('^', "^^")
+        .replace('%', "^%")
+        .replace('_', "^_");
+    let pattern = format!("{}%", escaped_prefix);
+
+    // 1. Delete from playback_history for files under this folder
+    sqlx::query("DELETE FROM playback_history WHERE file_path LIKE ? ESCAPE '^'")
+        .bind(&pattern)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Delete from files under this folder
+    sqlx::query("DELETE FROM files WHERE path LIKE ? ESCAPE '^'")
+        .bind(&pattern)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 3. Delete series that no longer have any files associated with them,
+    //    BUT preserve any series that were manually matched (manual = 1) or have user_data.
+    sqlx::query(
+        "DELETE FROM series
+         WHERE key NOT IN (SELECT DISTINCT series_key FROM files)
+           AND manual = 0
+           AND key NOT IN (
+               SELECT series_key FROM user_data
+               WHERE status IS NOT NULL OR score IS NOT NULL OR progress > 0 OR notes IS NOT NULL OR favorite = 1
+           )"
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 4. Update episode_count and release_groups for all remaining series (including setting to 0 for those with no files)
+    sqlx::query(
+        "UPDATE series SET
+            episode_count = (SELECT COUNT(*) FROM files WHERE files.series_key = series.key),
+            release_groups = COALESCE(
+                (SELECT json_group_array(rg) FROM (
+                    SELECT DISTINCT release_group as rg FROM files
+                    WHERE files.series_key = series.key AND release_group IS NOT NULL
+                )),
+                '[]'
+            )"
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    db::all_entries(&db.0, &db.1).await
+}
+
 
 // ---------------------------------------------------------------------------
 // Playback history commands (SQLite-backed playback history)

@@ -10,6 +10,7 @@ import SettingsPage from "./features/settings/SettingsPage";
 import CalendarPage from "./features/calendar/CalendarPage";
 import DiscoverPage from "./features/discover/DiscoverPage";
 import ProfilePage from "./features/library/ProfilePage";
+import StatsPage from "./features/library/StatsPage";
 
 function Page({ children }: { children: React.ReactNode }) {
   return (
@@ -86,7 +87,7 @@ export default function App() {
                   path="/stats"
                   element={
                     <Page>
-                      <ProfilePage defaultTab="stats" />
+                      <StatsPage />
                     </Page>
                   }
                 />

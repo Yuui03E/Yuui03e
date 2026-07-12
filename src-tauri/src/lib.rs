@@ -7,6 +7,7 @@ mod media;
 mod metadata;
 mod parser;
 mod scanner;
+mod tmdb;
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -73,6 +74,8 @@ pub fn run() {
             commands::search_anilist,
             commands::get_setting,
             commands::set_setting,
+            commands::get_backdrops,
+            commands::test_tmdb_key,
             commands::play_video,
             commands::graphql_anilist,
             // Playback history (SQLite-backed)
@@ -87,6 +90,7 @@ pub fn run() {
             commands::cancel_sync,
             commands::pause_sync,
             commands::resume_sync,
+            commands::remove_folder_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLibrary } from "../store/library";
 import { motion, AnimatePresence } from "framer-motion";
+
+/** How long each backdrop is shown before crossfading to the next (ms). */
+const SLIDE_DURATION = 9000;
 
 /**
  * Animated, GPU-rendered gradient/aurora background using a lightweight WebGL
@@ -63,7 +66,8 @@ void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }
 
 export default function ShaderBackground() {
   const ref = useRef<HTMLCanvasElement>(null);
-  const activeBackdrop = useLibrary((s) => s.activeBackdrop);
+  const activeBackdrops = useLibrary((s) => s.activeBackdrops);
+  const [slide, setSlide] = useState(0);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -123,6 +127,25 @@ export default function ShaderBackground() {
     };
   }, []);
 
+  // Reset to the first slide whenever the backdrop set changes (new anime).
+  useEffect(() => {
+    setSlide(0);
+  }, [activeBackdrops]);
+
+  // Advance the slideshow on a timer and preload the upcoming image so the
+  // crossfade never pops. No-op for 0 or 1 images.
+  useEffect(() => {
+    if (activeBackdrops.length <= 1) return;
+    const next = (slide + 1) % activeBackdrops.length;
+    // Preload the next frame.
+    const img = new Image();
+    img.src = activeBackdrops[next];
+    const t = setTimeout(() => setSlide(next), SLIDE_DURATION);
+    return () => clearTimeout(t);
+  }, [slide, activeBackdrops]);
+
+  const currentBackdrop = activeBackdrops[slide] ?? null;
+
   return (
     <div className="fixed inset-0 -z-10 h-full w-full overflow-hidden bg-black">
       {/* WebGL Canvas Background */}
@@ -132,15 +155,16 @@ export default function ShaderBackground() {
         aria-hidden
       />
 
-      {/* Dynamic Animated Anime backdrop artwork overlay */}
+      {/* Dynamic anime backdrop — high-res TMDB artwork, crossfading slideshow.
+          `key` is the URL so AnimatePresence crossfades between slides. */}
       <AnimatePresence>
-        {activeBackdrop && (
+        {currentBackdrop && (
           <motion.div
-            key={activeBackdrop}
+            key={currentBackdrop}
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.65 }}
+            animate={{ opacity: 0.72 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1.0, ease: "easeInOut" }}
+            transition={{ duration: 1.6, ease: "easeInOut" }}
             className="absolute inset-0 h-full w-full overflow-hidden"
           >
             {/* Zooming and panning background (Ken Burns effect) */}
@@ -156,16 +180,17 @@ export default function ShaderBackground() {
                 repeat: Infinity,
                 ease: "linear"
               }}
-              src={activeBackdrop}
+              src={currentBackdrop}
               alt=""
-              className="h-full w-full object-cover blur-[5px] brightness-[0.35] saturate-[1.25]"
+              // Medium blur: artwork is clearly visible but text stays readable.
+              className="h-full w-full object-cover blur-[2px] brightness-[0.5] saturate-[1.15]"
             />
-            {/* Blends to pitch black at base/vignettes */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/80" />
+            {/* Blends to black at base/edges so foreground content stays legible */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/60" />
             <div
               className="absolute inset-0"
               style={{
-                background: "radial-gradient(circle, transparent 20%, #000000 90%)"
+                background: "radial-gradient(circle, transparent 35%, #000000 95%)"
               }}
             />
           </motion.div>
