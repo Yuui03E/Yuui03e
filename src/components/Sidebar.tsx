@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useLibrary } from "../store/library";
+import logoImg from "../assets/yuui_logo_better.png";
 import {
   Grid,
   FileCheck,
@@ -23,13 +24,18 @@ const NAV_ITEMS = [
 ];
 
 // Shared box + icon dimensions so every option matches.
-const BTN_CLS = "flex h-11 w-11 items-center justify-center rounded-xl border transition-all duration-200 select-none no-drag";
+const BTN_CLS =
+  "flex h-11 w-11 items-center justify-center rounded-xl border transition-all duration-200 select-none no-drag";
 const ICON_CLS = "h-7 w-7 shrink-0"; // 28px size
 
 function TipContent({ label }: { label: string }) {
   return (
     <Tooltip.Portal>
-      <Tooltip.Content side="right" sideOffset={10} className="radix-tooltip-content z-[100]">
+      <Tooltip.Content
+        side="right"
+        sideOffset={10}
+        className="radix-tooltip-content z-[100]"
+      >
         {label}
         <Tooltip.Arrow className="fill-surface-elevated" />
       </Tooltip.Content>
@@ -97,22 +103,24 @@ export default function Sidebar() {
             transition={{ type: "spring", stiffness: 400, damping: 38 }}
             className="noselect flex h-full shrink-0 flex-col items-center overflow-hidden border-r border-border bg-black py-3"
           >
-            {/* Creative "Y" Logo */}
-            <div className="flex h-11 w-11 items-center justify-center select-none no-drag mb-4 relative group">
-              {/* Glowing gradient background on hover */}
-              <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-accent to-yuui-accent2 opacity-20 blur-md transition-opacity duration-300 group-hover:opacity-60" />
-              {/* Logo box */}
-              <div className="relative flex h-full w-full items-center justify-center rounded-xl border border-white/[0.08] bg-surface-elevated shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:border-accent/30">
-                <span className="font-display text-2xl font-black bg-gradient-to-tr from-accent to-yuui-accent2 bg-clip-text text-transparent">
-                  Y
-                </span>
-              </div>
+            {/* Yuui logo mark */}
+            <div className="flex h-11 w-11 items-center justify-center select-none no-drag mb-4 relative">
+              <img
+                src={logoImg}
+                alt="Yuui"
+                className="h-8.5 w-8.5 object-contain select-none pointer-events-none"
+              />
             </div>
 
             {/* Top: navigation — one evenly-spaced, aligned column */}
             <div className="flex flex-col items-center gap-2">
               {NAV_ITEMS.map((item) => (
-                <SidebarNavItem key={item.to} to={item.to} label={item.label} Icon={item.Icon} />
+                <SidebarNavItem
+                  key={item.to}
+                  to={item.to}
+                  label={item.label}
+                  Icon={item.Icon}
+                />
               ))}
             </div>
 
@@ -160,7 +168,13 @@ export default function Sidebar() {
                         )}
                       </span>
                     </Tooltip.Trigger>
-                    <TipContent label={anilistUser ? `${anilistUser.name}'s Profile` : "Connect AniList"} />
+                    <TipContent
+                      label={
+                        anilistUser
+                          ? `${anilistUser.name}'s Profile`
+                          : "Connect AniList"
+                      }
+                    />
                   </Tooltip.Root>
                 )}
               </NavLink>

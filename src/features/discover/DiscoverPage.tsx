@@ -6,6 +6,7 @@ import { humanizeEnum } from "../../lib/format";
 import { invoke } from "@tauri-apps/api/core";
 import DiscoverCard from "../../components/DiscoverCard";
 import { useLibrary } from "../../store/library";
+import { Search } from "lucide-react";
 
 interface DiscoverAnime {
   id: number;
@@ -287,9 +288,7 @@ export default function DiscoverPage() {
               placeholder="Search AniList..."
               className="w-full glass rounded-xl bg-transparent pl-10 pr-4 py-2.5 text-sm outline-none placeholder:text-yuui-muted/50 border border-white/[0.05] focus:border-yuui-accent/40 text-white"
             />
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-yuui-muted/60">
-              🔍
-            </span>
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-yuui-muted/60" />
           </div>
         </div>
 
