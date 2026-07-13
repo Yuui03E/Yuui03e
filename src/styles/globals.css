@@ -16,6 +16,8 @@
     --foreground: oklch(0.96 0 0);
     --muted-foreground: oklch(0.65 0 0);
     --accent: oklch(0.72 0.23 343); /* Vivid rose/pink accent */
+    --accent2: oklch(0.58 0.23 283); /* Violet/purple */
+    --accent3: oklch(0.82 0.17 200); /* Cyan */
   }
 
   html,
@@ -39,13 +41,13 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(124, 92, 255, 0.25);
+    background: color-mix(in srgb, var(--accent2) 25%, transparent);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 95, 162, 0.45);
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
     background-clip: content-box;
   }
 }

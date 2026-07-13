@@ -249,35 +249,32 @@ export default function CalendarPage() {
   return (
     <div className="flex h-full flex-col pt-5">
       {/* Top Banner Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4 px-6">
-        <div>
+      <div className="flex flex-col gap-1 px-6">
+        <div className="flex flex-wrap items-center gap-3">
           <motion.h1
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
-            className="font-display text-4xl font-bold"
+            className="font-display text-4xl font-bold flex flex-wrap items-center gap-3.5"
           >
             Airing <span className="text-gradient">Calendar</span>
-          </motion.h1>
-          <p className="mt-1 text-sm text-yuui-muted">
-            Track weekly airing episodes and sync them directly with your library.
-          </p>
-        </div>
 
-        {/* Stats Summary Pills */}
-        <div className="flex items-center gap-2 select-none">
-          <div className="glass rounded-xl px-3 py-1.5 text-xs text-left">
-            <span className="text-[10px] text-yuui-muted uppercase tracking-wider block">Total Airing</span>
-            <span className="text-white font-bold font-mono text-sm">{stats.total}</span>
-          </div>
-          <div className="glass rounded-xl px-3 py-1.5 text-xs text-left">
-            <span className="text-[10px] text-yuui-muted uppercase tracking-wider block">In Library</span>
-            <span className="text-emerald-400 font-bold font-mono text-sm">{stats.library}</span>
-          </div>
-          <div className="glass rounded-xl px-3 py-1.5 text-xs text-left">
-            <span className="text-[10px] text-yuui-muted uppercase tracking-wider block">On Watchlist</span>
-            <span className="text-yuui-accent3 font-bold font-mono text-sm">{stats.watchlist}</span>
-          </div>
+            {/* Inline Mini Stats Badges */}
+            <div className="flex items-center gap-1.5 select-none font-sans text-xs font-semibold mt-1">
+              <span className="flex items-center gap-1 bg-white/[0.03] border border-white/[0.05] rounded-full px-2.5 py-0.5 text-yuui-muted">
+                airing <strong className="text-white font-bold font-mono">{stats.total}</strong>
+              </span>
+              <span className="flex items-center gap-1 bg-white/[0.03] border border-white/[0.05] rounded-full px-2.5 py-0.5 text-yuui-muted">
+                library <strong className="text-accent font-bold font-mono">{stats.library}</strong>
+              </span>
+              <span className="flex items-center gap-1 bg-white/[0.03] border border-white/[0.05] rounded-full px-2.5 py-0.5 text-yuui-muted">
+                watchlist <strong className="text-accent2 font-bold font-mono">{stats.watchlist}</strong>
+              </span>
+            </div>
+          </motion.h1>
         </div>
+        <p className="text-xs text-yuui-muted">
+          Track weekly airing episodes and sync them directly with your library.
+        </p>
       </div>
 
       {/* Controls Toolbar (Filters, Search, Views) */}
@@ -389,7 +386,7 @@ export default function CalendarPage() {
               step="10"
               value={posterWidth}
               onChange={(e) => setPosterWidth(Number(e.target.value))}
-              className="w-16 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-yuui-accent3 focus:outline-none"
+              className="w-16 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent focus:outline-none"
             />
             <span className="font-mono text-[10px] text-white font-bold w-9 text-right shrink-0">{posterWidth}px</span>
           </div>

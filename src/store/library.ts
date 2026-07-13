@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { applyThemeStyles } from "../lib/theme";
 import type { AniListMedia, StoredEntry, UserData } from "../lib/types";
 import {
   getEntry,
@@ -82,6 +83,24 @@ interface LibraryState {
   setActiveBackdrop: (url: string | null) => void;
   /** Set the full ordered backdrop list for the slideshow. */
   setActiveBackdrops: (urls: string[]) => void;
+
+  themeColor: string;
+  customBackgroundColor: string;
+  themeAccent: string;
+  customAccentColor: string;
+  appBackgroundImage: string;
+  appBackgroundImageOpacity: number;
+  appBackgroundImageBlur: number;
+  showAnimatedShader: boolean;
+
+  setThemeColor: (color: string) => Promise<void>;
+  setCustomBackgroundColor: (color: string) => Promise<void>;
+  setThemeAccent: (accent: string) => Promise<void>;
+  setCustomAccentColor: (color: string) => Promise<void>;
+  setAppBackgroundImage: (image: string) => Promise<void>;
+  setAppBackgroundImageOpacity: (opacity: number) => Promise<void>;
+  setAppBackgroundImageBlur: (blur: number) => Promise<void>;
+  setShowAnimatedShader: (show: boolean) => Promise<void>;
 }
 
 async function runSync(
@@ -185,6 +204,52 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     set({ cardSize: size });
   },
 
+  themeColor: "midnight",
+  customBackgroundColor: "#141414",
+  themeAccent: "sakura",
+  customAccentColor: "#ff5fa2",
+  appBackgroundImage: "",
+  appBackgroundImageOpacity: 0.3,
+  appBackgroundImageBlur: 10,
+  showAnimatedShader: true,
+
+  setThemeColor: async (color) => {
+    set({ themeColor: color });
+    applyThemeStyles(get());
+    await setSetting("theme_color", color);
+  },
+  setCustomBackgroundColor: async (color) => {
+    set({ customBackgroundColor: color });
+    applyThemeStyles(get());
+    await setSetting("custom_background_color", color);
+  },
+  setThemeAccent: async (accent) => {
+    set({ themeAccent: accent });
+    applyThemeStyles(get());
+    await setSetting("theme_accent", accent);
+  },
+  setCustomAccentColor: async (color) => {
+    set({ customAccentColor: color });
+    applyThemeStyles(get());
+    await setSetting("custom_accent_color", color);
+  },
+  setAppBackgroundImage: async (image) => {
+    set({ appBackgroundImage: image });
+    await setSetting("app_background_image", image);
+  },
+  setAppBackgroundImageOpacity: async (opacity) => {
+    set({ appBackgroundImageOpacity: opacity });
+    await setSetting("app_background_image_opacity", String(opacity));
+  },
+  setAppBackgroundImageBlur: async (blur) => {
+    set({ appBackgroundImageBlur: blur });
+    await setSetting("app_background_image_blur", String(blur));
+  },
+  setShowAnimatedShader: async (show) => {
+    set({ showAnimatedShader: show });
+    await setSetting("show_animated_shader", show ? "true" : "false");
+  },
+
   // Search progress tracking
   searchProgress: null,
   searchHistory: [],
@@ -232,6 +297,32 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (get().status !== "idle") return;
     try {
       set({ status: "loading", progress: "Loading library…" });
+
+      // Load the theme preferences
+      const themeColor = await getSetting("theme_color") || "midnight";
+      const customBackgroundColor = await getSetting("custom_background_color") || "#141414";
+      const themeAccent = await getSetting("theme_accent") || "sakura";
+      const customAccentColor = await getSetting("custom_accent_color") || "#ff5fa2";
+      const appBackgroundImage = await getSetting("app_background_image") || "";
+      const bgOpacityVal = await getSetting("app_background_image_opacity");
+      const appBackgroundImageOpacity = bgOpacityVal !== null ? Number(bgOpacityVal) : 0.3;
+      const bgBlurVal = await getSetting("app_background_image_blur");
+      const appBackgroundImageBlur = bgBlurVal !== null ? Number(bgBlurVal) : 10;
+      const showAnimatedShader = (await getSetting("show_animated_shader")) !== "false";
+
+      set({
+        themeColor,
+        customBackgroundColor,
+        themeAccent,
+        customAccentColor,
+        appBackgroundImage,
+        appBackgroundImageOpacity,
+        appBackgroundImageBlur,
+        showAnimatedShader,
+      });
+
+      // Apply styles to document.documentElement
+      applyThemeStyles({ themeColor, customBackgroundColor, themeAccent, customAccentColor });
 
       // Load the image-backdrop preference (default off — live animation only).
       const bdPref = await getSetting("image_backdrop_enabled");

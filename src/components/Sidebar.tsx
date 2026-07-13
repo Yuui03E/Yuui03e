@@ -101,7 +101,7 @@ export default function Sidebar() {
             animate={{ width: 56, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 38 }}
-            className="noselect flex h-full shrink-0 flex-col items-center overflow-hidden border-r border-border bg-black py-3"
+            className="noselect flex h-full shrink-0 flex-col items-center overflow-hidden border-r border-border bg-background py-3"
           >
             {/* Yuui logo mark */}
             <div className="flex h-11 w-11 items-center justify-center select-none no-drag mb-4 relative">
@@ -192,7 +192,7 @@ export default function Sidebar() {
             exit={{ opacity: 0, y: 8 }}
             onClick={() => setSidebarHidden(false)}
             title="Show sidebar"
-            className={`${BTN_CLS} fixed left-3 bottom-4 z-[80] border-border bg-black/80 text-muted-foreground shadow-lg backdrop-blur hover:bg-surface-elevated hover:text-foreground`}
+            className={`${BTN_CLS} fixed left-3 bottom-4 z-[80] border-border bg-background/80 text-muted-foreground shadow-lg backdrop-blur hover:bg-surface-elevated hover:text-foreground`}
           >
             <PanelLeft className={ICON_CLS} />
           </motion.button>

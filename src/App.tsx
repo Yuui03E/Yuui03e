@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { useLibrary } from "./store/library";
 import ShaderBackground from "./components/ShaderBackground";
 import Sidebar from "./components/Sidebar";
 import TitleBar from "./components/TitleBar";
@@ -27,6 +29,11 @@ function Page({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const location = useLocation();
+  const init = useLibrary((s) => s.init);
+
+  useEffect(() => {
+    init();
+  }, [init]);
 
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-transparent text-foreground font-sans">

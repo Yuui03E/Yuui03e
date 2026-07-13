@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { useLibrary } from "../store/library";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -67,6 +68,10 @@ void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }
 export default function ShaderBackground() {
   const ref = useRef<HTMLCanvasElement>(null);
   const activeBackdrops = useLibrary((s) => s.activeBackdrops);
+  const showAnimatedShader = useLibrary((s) => s.showAnimatedShader);
+  const appBackgroundImage = useLibrary((s) => s.appBackgroundImage);
+  const appBackgroundImageOpacity = useLibrary((s) => s.appBackgroundImageOpacity);
+  const appBackgroundImageBlur = useLibrary((s) => s.appBackgroundImageBlur);
   const [slide, setSlide] = useState(0);
 
   useEffect(() => {
@@ -151,15 +156,36 @@ export default function ShaderBackground() {
   }, [slide, activeBackdrops]);
 
   const currentBackdrop = activeBackdrops[slide] ?? null;
+  const resolvedBgUrl = appBackgroundImage
+    ? appBackgroundImage.startsWith("http")
+      ? appBackgroundImage
+      : convertFileSrc(appBackgroundImage)
+    : "";
 
   return (
-    <div className="fixed inset-0 -z-10 h-full w-full overflow-hidden bg-black">
+    <div className="fixed inset-0 -z-10 h-full w-full overflow-hidden bg-background">
+      {/* Custom app background image */}
+      {resolvedBgUrl && (
+        <div
+          className="absolute inset-0 h-full w-full transition-all duration-500"
+          style={{
+            backgroundImage: `url(${resolvedBgUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            opacity: appBackgroundImageOpacity,
+            filter: `blur(${appBackgroundImageBlur}px)`,
+          }}
+        />
+      )}
+
       {/* WebGL Canvas Background */}
-      <canvas
-        ref={ref}
-        className="absolute inset-0 h-full w-full opacity-55"
-        aria-hidden
-      />
+      {showAnimatedShader && (
+        <canvas
+          ref={ref}
+          className="absolute inset-0 h-full w-full opacity-55"
+          aria-hidden
+        />
+      )}
 
       {/* Dynamic anime backdrop — high-res TMDB artwork, crossfading slideshow.
           `key` is the URL so AnimatePresence crossfades between slides. */}

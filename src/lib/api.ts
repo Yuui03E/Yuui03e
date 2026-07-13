@@ -208,3 +208,20 @@ export async function pauseSync(): Promise<void> {
 export async function resumeSync(): Promise<void> {
   return invoke("resume_sync");
 }
+
+/** Open the native file selector to pick a background image. */
+export async function pickBackgroundImage(): Promise<string | null> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: "Select Background Image",
+    filters: [
+      {
+        name: "Images",
+        extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+      },
+    ],
+  });
+  if (Array.isArray(selected)) return selected[0] ?? null;
+  return selected ?? null;
+}

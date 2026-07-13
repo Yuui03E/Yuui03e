@@ -19,8 +19,8 @@ export default {
           text: "var(--foreground)",
           muted: "var(--muted-foreground)",
           accent: "var(--accent)",
-          accent2: "#7c5cff",
-          accent3: "#22d3ee",
+          accent2: "var(--accent2)",
+          accent3: "var(--accent3)",
         },
       },
       fontFamily: {
