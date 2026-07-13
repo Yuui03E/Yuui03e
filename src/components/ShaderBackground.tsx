@@ -106,20 +106,26 @@ export default function ShaderBackground() {
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
+      // Downscale canvas resolution by 4x. Since this is a heavily blurred and dark
+      // background aurora, a lower rendering resolution looks identical but saves 16x pixels.
+      canvas.width = Math.max(32, Math.floor((window.innerWidth * dpr) / 4));
+      canvas.height = Math.max(32, Math.floor((window.innerHeight * dpr) / 4));
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
     resize();
     window.addEventListener("resize", resize);
 
-    const render = () => {
-      gl.uniform2f(uRes, canvas.width, canvas.height);
-      gl.uniform1f(uTime, (performance.now() - start) / 1000);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    let lastTime = 0;
+    const render = (now: number) => {
       raf = requestAnimationFrame(render);
+      // Throttle to ~30 FPS (approx 33.3ms per frame) to prevent battery drain and high CPU/GPU usage
+      if (now - lastTime < 33.3) return;
+      lastTime = now;
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform1f(uTime, (now - start) / 1000);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
-    render();
+    raf = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(raf);

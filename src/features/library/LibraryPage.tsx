@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLibrary } from "../../store/library";
 import AnimeCard from "../../components/AnimeCard";
+import QuickViewModal from "../../components/QuickViewModal";
 import VideoPlayerOverlay from "../../components/VideoPlayerOverlay";
 import {
   Grid,
@@ -297,6 +298,7 @@ export default function LibraryPage() {
   const [groupFilter, setGroupFilter] = useState("ALL");
   const [sortBy, setSortBy] = useState("title");
   const [showStats, setShowStats] = useState(false);
+  const [quickViewKey, setQuickViewKey] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState("ALL");
   const [playbackHistory, setPlaybackHistory] = useState<any[]>([]);
   const [showDuplicatesList, setShowDuplicatesList] = useState(false);
@@ -1396,6 +1398,7 @@ export default function LibraryPage() {
                       entry={entry}
                       index={i}
                       playbackHistory={playbackHistory}
+                      onQuickView={(e) => setQuickViewKey(e.key)}
                     />
                   ))}
                 </div>
@@ -1506,6 +1509,13 @@ export default function LibraryPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Right-click quick view + edit */}
+      {quickViewKey && (() => {
+        const qvEntry = entries.find((e) => e.key === quickViewKey);
+        if (!qvEntry) return null;
+        return <QuickViewModal entry={qvEntry} onClose={() => setQuickViewKey(null)} />;
+      })()}
     </div>
   );
 }

@@ -1,159 +1,189 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useLibrary } from "../store/library";
-import { 
-  Grid, 
-  FileCheck, 
-  Compass, 
-  Calendar, 
+import {
+  Grid,
+  FileCheck,
+  Compass,
+  Calendar,
   Settings,
-  BarChart3,
-  User
+  User,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 
-interface NavItemProps {
+const NAV_ITEMS = [
+  { to: "/", label: "Library", Icon: Grid },
+  { to: "/review", label: "Review", Icon: FileCheck },
+  { to: "/discover", label: "Discover", Icon: Compass },
+  { to: "/calendar", label: "Calendar", Icon: Calendar },
+  { to: "/settings", label: "Settings", Icon: Settings },
+];
+
+// Shared box + icon dimensions so every option matches.
+const BTN_CLS = "flex h-11 w-11 items-center justify-center rounded-xl border transition-all duration-200 select-none no-drag";
+const ICON_CLS = "h-7 w-7 shrink-0"; // 28px size
+
+function TipContent({ label }: { label: string }) {
+  return (
+    <Tooltip.Portal>
+      <Tooltip.Content side="right" sideOffset={10} className="radix-tooltip-content z-[100]">
+        {label}
+        <Tooltip.Arrow className="fill-surface-elevated" />
+      </Tooltip.Content>
+    </Tooltip.Portal>
+  );
+}
+
+function SidebarNavItem({
+  to,
+  label,
+  Icon,
+}: {
   to: string;
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
-}
-
-function SidebarNavItem({ to, label, Icon }: NavItemProps) {
-  const content = (isActive: boolean) => (
-    <div
-      className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-all duration-200 select-none ${
-        isActive
-          ? "border-accent/20 bg-accent/10 text-accent font-semibold"
-          : "border-transparent text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
-      }`}
-    >
-      {isActive && (
-        <span className="absolute left-0 h-4.5 w-[2.5px] rounded-full bg-accent" />
-      )}
-      <Icon className="h-4.5 w-4.5 shrink-0" />
-    </div>
-  );
-
+}) {
   return (
-    <NavLink to={to} end={to === "/"} className="group/item block">
+    <NavLink
+      to={to}
+      end={to === "/"}
+      className={({ isActive }) =>
+        `${BTN_CLS} relative group/item ${
+          isActive
+            ? "border-accent/20 bg-accent/10 text-accent"
+            : "border-transparent text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+        }`
+      }
+    >
       {({ isActive }) => (
-        <Tooltip.Provider delayDuration={150}>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              {content(isActive)}
-            </Tooltip.Trigger>
-            <Tooltip.Portal>
-              <Tooltip.Content
-                side="right"
-                sideOffset={10}
-                className="radix-tooltip-content z-[100]"
-              >
-                {label}
-                <Tooltip.Arrow className="fill-surface-elevated" />
-              </Tooltip.Content>
-            </Tooltip.Portal>
-          </Tooltip.Root>
-        </Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <span className="flex h-full w-full items-center justify-center select-none">
+              {isActive && (
+                <span className="absolute left-0 h-5.5 w-[2.5px] rounded-full bg-accent" />
+              )}
+              <Icon className={ICON_CLS} />
+            </span>
+          </Tooltip.Trigger>
+          <TipContent label={label} />
+        </Tooltip.Root>
       )}
     </NavLink>
   );
 }
 
-const navGroups = [
-  {
-    title: "Library",
-    items: [
-      { to: "/", label: "Library", Icon: Grid },
-      { to: "/review", label: "Review", Icon: FileCheck },
-      { to: "/stats", label: "Stats", Icon: BarChart3 },
-    ]
-  },
-  {
-    title: "Discover",
-    items: [
-      { to: "/discover", label: "Discover", Icon: Compass },
-      { to: "/calendar", label: "Calendar", Icon: Calendar },
-    ]
-  },
-  {
-    title: "System",
-    items: [
-      { to: "/settings", label: "Settings", Icon: Settings },
-    ]
-  }
-];
-
 export default function Sidebar() {
   const { anilistUser } = useLibrary();
+  const [hidden, setHidden] = useState(
+    () => localStorage.getItem("yuui_sidebar_hidden") === "true",
+  );
+
+  const setSidebarHidden = (v: boolean) => {
+    setHidden(v);
+    localStorage.setItem("yuui_sidebar_hidden", String(v));
+  };
 
   return (
-    <aside className="noselect flex flex-col h-full bg-black border-r border-border pt-4 pb-4 shrink-0 w-[56px] items-center justify-between">
-      <div className="flex flex-col items-center w-full flex-1">
-        {/* Logo Area */}
-        <div className="h-10 flex items-center justify-center shrink-0 mb-4">
-          <span className="text-xl shrink-0">🌸</span>
-        </div>
+    <Tooltip.Provider delayDuration={150}>
+      <AnimatePresence initial={false}>
+        {!hidden && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 56, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 38 }}
+            className="noselect flex h-full shrink-0 flex-col items-center overflow-hidden border-r border-border bg-black py-3"
+          >
+            {/* Creative "Y" Logo */}
+            <div className="flex h-11 w-11 items-center justify-center select-none no-drag mb-4 relative group">
+              {/* Glowing gradient background on hover */}
+              <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-accent to-yuui-accent2 opacity-20 blur-md transition-opacity duration-300 group-hover:opacity-60" />
+              {/* Logo box */}
+              <div className="relative flex h-full w-full items-center justify-center rounded-xl border border-white/[0.08] bg-surface-elevated shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:border-accent/30">
+                <span className="font-display text-2xl font-black bg-gradient-to-tr from-accent to-yuui-accent2 bg-clip-text text-transparent">
+                  Y
+                </span>
+              </div>
+            </div>
 
-        {/* Nav groups */}
-        <div className="flex-1 flex flex-col gap-2 p-1 overflow-y-auto w-full items-center">
-          {navGroups.map((group, groupIdx) => (
-            <div key={group.title} className="flex flex-col gap-1.5 items-center w-full">
-              {groupIdx > 0 && (
-                <hr className="border-border w-8 my-1" />
-              )}
-              
-              {group.items.map((item) => (
-                <SidebarNavItem
-                  key={item.to}
-                  to={item.to}
-                  label={item.label}
-                  Icon={item.Icon}
-                />
+            {/* Top: navigation — one evenly-spaced, aligned column */}
+            <div className="flex flex-col items-center gap-2">
+              {NAV_ITEMS.map((item) => (
+                <SidebarNavItem key={item.to} to={item.to} label={item.label} Icon={item.Icon} />
               ))}
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Bottom Profile Button */}
-      <div className="mt-auto pt-4 border-t border-border/40 w-full flex justify-center">
-        <NavLink to="/profile" className="group/profile block select-none">
-          {({ isActive }) => (
-            <Tooltip.Provider delayDuration={150}>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <div
-                    className={`relative h-9 w-9 rounded-full border flex items-center justify-center overflow-hidden transition-all duration-200 cursor-pointer ${
-                      isActive
-                        ? "border-accent/30 ring-2 ring-accent/15"
-                        : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
-                    }`}
-                  >
-                    {anilistUser ? (
-                      <img
-                        src={anilistUser.avatarUrl}
-                        alt={anilistUser.name}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <User className="h-4.5 w-4.5 text-muted-foreground group-hover/profile:text-foreground transition-colors" />
-                    )}
-                  </div>
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Content
-                    side="right"
-                    sideOffset={10}
-                    className="radix-tooltip-content z-[100]"
-                  >
-                    {anilistUser ? `${anilistUser.name}'s Profile` : "Connect AniList"}
-                    <Tooltip.Arrow className="fill-surface-elevated" />
-                  </Tooltip.Content>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </Tooltip.Provider>
-          )}
-        </NavLink>
-      </div>
-    </aside>
+            {/* Bottom: collapse toggle, then Profile at the very bottom */}
+            <div className="mt-auto flex flex-col items-center gap-2">
+              <button
+                onClick={() => setSidebarHidden(true)}
+                className={`${BTN_CLS} border-transparent text-muted-foreground hover:bg-surface-elevated hover:text-foreground`}
+              >
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <span className="flex h-full w-full items-center justify-center">
+                      <PanelLeftClose className={ICON_CLS} />
+                    </span>
+                  </Tooltip.Trigger>
+                  <TipContent label="Hide sidebar" />
+                </Tooltip.Root>
+              </button>
+
+              <NavLink
+                to="/profile"
+                className={({ isActive }) =>
+                  `${BTN_CLS} relative overflow-hidden group/profile ${
+                    isActive
+                      ? "border-accent/25 bg-accent/10"
+                      : "border-transparent hover:bg-surface-elevated"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <span className="flex h-full w-full items-center justify-center">
+                        {isActive && (
+                          <span className="absolute left-0 h-5.5 w-[2.5px] rounded-full bg-accent" />
+                        )}
+                        {anilistUser ? (
+                          <img
+                            src={anilistUser.avatarUrl}
+                            alt={anilistUser.name}
+                            className="h-7 w-7 rounded-full object-cover"
+                          />
+                        ) : (
+                          <User className="h-7 w-7 shrink-0 text-muted-foreground group-hover/profile:text-foreground transition-colors" />
+                        )}
+                      </span>
+                    </Tooltip.Trigger>
+                    <TipContent label={anilistUser ? `${anilistUser.name}'s Profile` : "Connect AniList"} />
+                  </Tooltip.Root>
+                )}
+              </NavLink>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* Floating reopen button when hidden — bottom-left corner */}
+      <AnimatePresence>
+        {hidden && (
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={() => setSidebarHidden(false)}
+            title="Show sidebar"
+            className={`${BTN_CLS} fixed left-3 bottom-4 z-[80] border-border bg-black/80 text-muted-foreground shadow-lg backdrop-blur hover:bg-surface-elevated hover:text-foreground`}
+          >
+            <PanelLeft className={ICON_CLS} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </Tooltip.Provider>
   );
 }

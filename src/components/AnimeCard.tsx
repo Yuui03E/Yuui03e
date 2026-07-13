@@ -14,10 +14,12 @@ export default function AnimeCard({
   entry,
   index,
   playbackHistory = [],
+  onQuickView,
 }: {
   entry: StoredEntry;
   index: number;
   playbackHistory?: any[];
+  onQuickView?: (entry: StoredEntry) => void;
 }) {
   const navigate = useNavigate();
   const activePlay = playbackHistory.find((item) =>
@@ -61,6 +63,11 @@ export default function AnimeCard({
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
       onClick={() => navigate(`/anime/${encodeURIComponent(entry.key)}`)}
+      onContextMenu={(e) => {
+        if (!onQuickView) return;
+        e.preventDefault();
+        onQuickView(entry);
+      }}
       className="group relative cursor-pointer"
     >
       <div

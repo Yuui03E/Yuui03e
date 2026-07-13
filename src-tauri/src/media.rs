@@ -109,9 +109,21 @@ pub fn start_preview_worker(pool: SqlitePool, cache_dir: std::path::PathBuf) {
         // Sleep a short time on startup
         tokio::time::sleep(Duration::from_secs(3)).await;
 
+        // Keep track of ed2k hashes that we have verified to have preview files generated/existing
+        let mut verified_previews = std::collections::HashSet::new();
+        let mut last_ffmpeg = String::new();
+        let mut last_ffprobe = String::new();
+
         loop {
             let ffmpeg = get_ffmpeg_path(&pool).await;
             let ffprobe = get_ffprobe_path(&pool).await;
+
+            // If settings change, clear our verification cache so we attempt generation again
+            if ffmpeg != last_ffmpeg || ffprobe != last_ffprobe {
+                verified_previews.clear();
+                last_ffmpeg = ffmpeg.clone();
+                last_ffprobe = ffprobe.clone();
+            }
 
             let files: Vec<(String, String, i64)> = sqlx::query_as(
                 "SELECT path, ed2k, size_bytes FROM files WHERE ed2k IS NOT NULL"
@@ -129,6 +141,11 @@ pub fn start_preview_worker(pool: SqlitePool, cache_dir: std::path::PathBuf) {
             let mut processed_any = false;
 
             for (path, ed2k, _size) in files {
+                // Skip if this file was already verified/attempted in the current session
+                if verified_previews.contains(&ed2k) {
+                    continue;
+                }
+
                 if !Path::new(&path).exists() {
                     continue;
                 }
@@ -157,12 +174,19 @@ pub fn start_preview_worker(pool: SqlitePool, cache_dir: std::path::PathBuf) {
                         Err(_) => {}
                     }
 
+                    // Add to verified list after attempt to avoid hot-looping process failures (missing ffmpeg, etc.)
+                    verified_previews.insert(ed2k);
+
                     tokio::time::sleep(Duration::from_millis(500)).await;
+                } else {
+                    // Both files already exist, mark as verified
+                    verified_previews.insert(ed2k);
                 }
             }
 
             if !processed_any {
-                tokio::time::sleep(Duration::from_secs(15)).await;
+                // If there's nothing new to process, idle sleep for 60 seconds to save SQLite query overhead
+                tokio::time::sleep(Duration::from_secs(60)).await;
             } else {
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
