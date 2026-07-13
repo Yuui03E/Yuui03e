@@ -261,9 +261,9 @@ export default function DiscoverPage() {
   }, [sentinelRef, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="flex-1 h-full flex flex-col">
-      {/* Fixed header/filter toolbar - outside scrollable area */}
-      <div className="px-6 pt-5 pb-0 shrink-0">
+    <div className="h-full overflow-y-auto px-6 pt-5 pb-10">
+      {/* Header/filter toolbar */}
+      <div className="shrink-0">
         {/* Header and Search Input */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -393,8 +393,8 @@ export default function DiscoverPage() {
         </div>
       </div>
 
-      {/* Scrollable card grid area */}
-      <div className="flex-1 overflow-y-auto px-6 pb-8 mt-6">
+      {/* Card grid area */}
+      <div className="mt-6">
         {/* Grid List */}
         <div>
           {isLoading && (
