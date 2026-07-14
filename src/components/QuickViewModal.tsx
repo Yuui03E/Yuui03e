@@ -4,13 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { useLibrary } from "../store/library";
 import type { StoredEntry } from "../lib/types";
 import { cleanDescription, humanizeEnum, countdown } from "../lib/format";
+import { TRACK_STATUSES } from "../lib/anilistStatus";
 import {
   X, Save, Heart, Calendar, CheckCircle2, AlertTriangle, FileVideo, ExternalLink,
 } from "lucide-react";
 
 const ACCENT = "#ff5fa2";
 const ACCENT2 = "#7c5cff";
-const TRACK_STATUSES = ["Watching", "Completed", "Planning", "Paused", "Dropped"] as const;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function fmtSize(b: number) {

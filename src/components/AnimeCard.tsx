@@ -15,11 +15,13 @@ export default function AnimeCard({
   index,
   playbackHistory = [],
   onQuickView,
+  onResume,
 }: {
   entry: StoredEntry;
   index: number;
   playbackHistory?: any[];
   onQuickView?: (entry: StoredEntry) => void;
+  onResume?: (video: { path: string; episode: number; title: string }) => void;
 }) {
   const navigate = useNavigate();
   const activePlay = playbackHistory.find((item) =>
@@ -136,7 +138,20 @@ export default function AnimeCard({
 
           <div className="absolute bottom-0 left-0 right-0 p-3 flex flex-col gap-1.5 justify-end">
             {activePlay && activePlay.duration > 0 && (
-              <div className="w-full space-y-1">
+              <div
+                className={`w-full space-y-1 ${onResume ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                onClick={(e) => {
+                  if (!onResume) return;
+                  e.stopPropagation();
+                  onResume({
+                    path: activePlay.file_path,
+                    episode: activePlay.episode ?? 1,
+                    title:
+                      activePlay.title ||
+                      `${title} - Episode ${activePlay.episode ?? 1}`,
+                  });
+                }}
+              >
                 <div className="flex items-center justify-between text-[9px] font-bold text-white/95 drop-shadow">
                   <span>Resume Ep {activePlay.episode}</span>
                   <span>{Math.round((activePlay.position / activePlay.duration) * 100)}%</span>
