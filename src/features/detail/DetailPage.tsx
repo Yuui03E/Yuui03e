@@ -50,9 +50,12 @@ export default function DetailPage() {
     media?.title.english || media?.title.romaji || entry?.title || "Unknown";
   const cover = media?.coverImage.extraLarge || media?.coverImage.large || null;
   const color = media?.coverImage.color || "#7c5cff";
-  // Hero image keeps a graceful fallback chain (banner → cover) since it's a
-  // framed 340px header, not the full-screen background.
+  const activeBackdrops = useLibrary((s) => s.activeBackdrops);
+  const tmdbBackdrop = activeBackdrops.find((url) => url !== media?.bannerImage);
+
+  // Hero image keeps a graceful fallback chain (TMDB backdrop → banner → cover)
   const heroImage =
+    tmdbBackdrop ||
     media?.bannerImage ||
     media?.coverImage?.extraLarge ||
     media?.coverImage?.large ||

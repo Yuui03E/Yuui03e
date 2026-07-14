@@ -9,13 +9,13 @@ export function StatPill({
   value: string | number;
 }) {
   return (
-    <div className="glass rounded-xl px-3 py-2">
-      <div className="font-display text-lg leading-none text-white">
-        {value}
-      </div>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-yuui-muted">
+    <div className="glass rounded-lg px-2.5 py-1 flex items-center gap-1.5 border border-white/[0.04] transition-colors group-hover:border-white/10">
+      <span className="text-[11px] font-medium tracking-wide uppercase text-yuui-muted">
         {label}
-      </div>
+      </span>
+      <span className="font-mono text-xs font-bold text-white bg-white/10 rounded px-1.5 py-0.5 leading-none">
+        {value}
+      </span>
     </div>
   );
 }

@@ -154,31 +154,35 @@ export default function LibraryPage() {
           <div className="flex items-center gap-2 select-none">
             <div
               onClick={() => setShowStats(!showStats)}
-              className="flex items-center gap-3 cursor-pointer group"
+              className="flex items-center gap-2 cursor-pointer group"
             >
               <StatPill label="Series" value={matchedEntries.length} />
               <StatPill label="Episodes" value={totalEps} />
-              <div className="glass rounded-2xl p-3 grid place-items-center transition-colors group-hover:bg-white/[0.08]">
+              <div className="glass rounded-lg p-1.5 flex items-center justify-center transition-colors group-hover:bg-white/[0.08] border border-white/[0.04]">
                 <ChevronDown
-                  className={`h-3.5 w-3.5 text-white transition-transform duration-300 ${showStats ? "rotate-180" : ""}`}
+                  className={`h-3.5 w-3.5 text-white/70 group-hover:text-white transition-transform duration-300 ${showStats ? "rotate-180" : ""}`}
                 />
               </div>
             </div>
 
             <div
               onClick={() => navigate("/review")}
-              className={`glass rounded-xl px-3 py-2 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] ${
+              className={`glass rounded-lg px-2.5 py-1 flex items-center gap-1.5 cursor-pointer transition-all hover:bg-white/[0.08] hover:scale-[1.02] border ${
                 needReview > 0
-                  ? "border border-yellow-500/40 bg-yellow-500/5 shadow-glow"
-                  : ""
+                  ? "border-yellow-500/40 bg-yellow-500/5 shadow-glow"
+                  : "border-white/[0.04]"
               }`}
             >
-              <div className="font-display text-lg leading-none text-white">
-                {needReview}
-              </div>
-              <div className="mt-0.5 text-[10px] uppercase tracking-wider text-yuui-muted">
+              <span className={`text-[11px] font-medium tracking-wide uppercase ${needReview > 0 ? "text-yellow-400 font-bold" : "text-yuui-muted"}`}>
                 Review
-              </div>
+              </span>
+              <span className={`font-mono text-xs font-bold rounded px-1.5 py-0.5 leading-none ${
+                needReview > 0 
+                  ? "bg-yellow-500/20 text-yellow-400" 
+                  : "bg-white/10 text-white"
+              }`}>
+                {needReview}
+              </span>
             </div>
           </div>
         </div>

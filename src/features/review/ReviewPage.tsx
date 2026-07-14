@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useLibrary } from "../../store/library";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { FolderOpen, AlertCircle } from "lucide-react";
 import type { AniListMedia, StoredEntry } from "../../lib/types";
 
 function CandidateCard({
@@ -22,7 +24,7 @@ function CandidateCard({
       whileHover={{ y: -4 }}
       onClick={onPick}
       disabled={picking}
-      className="group relative w-[140px] shrink-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-yuui-panel text-left disabled:opacity-50"
+      className="group relative w-[180px] shrink-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-yuui-panel text-left disabled:opacity-50"
     >
       <div className="relative aspect-[2/3] w-full overflow-hidden">
         {cover ? (
@@ -41,13 +43,13 @@ function CandidateCard({
             🌸
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-2">
-          <div className="line-clamp-2 text-[11px] font-semibold leading-tight text-white">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-3">
+          <div className="line-clamp-2 text-xs font-semibold leading-tight text-white">
             {media.title.english || media.title.romaji || "Unknown"}
           </div>
           {media.seasonYear && (
-            <div className="mt-0.5 text-[10px] text-white/60">
+            <div className="mt-1 text-[10px] text-white/60">
               {media.seasonYear} · {media.format ?? ""}
             </div>
           )}
@@ -58,7 +60,7 @@ function CandidateCard({
           )}
         </div>
       </div>
-      <div className="grid h-7 place-items-center bg-yuui-accent2/15 text-[11px] font-semibold text-yuui-accent2 transition-colors group-hover:bg-yuui-accent2/30">
+      <div className="grid h-8 place-items-center bg-yuui-accent2/15 text-xs font-semibold text-yuui-accent2 transition-colors group-hover:bg-yuui-accent2/30">
         {picking ? "Pinning…" : "Pin this match"}
       </div>
     </motion.button>
@@ -79,19 +81,60 @@ function SeriesRow({
   const [results, setResults] = useState<AniListMedia[]>([]);
   const [searching, setSearching] = useState(false);
   const [picking, setPicking] = useState<string | null>(null);
+  const [searchTimeout, setSearchTimeout] = useState<any>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const latestSearchQuery = useRef("");
 
-  const runSearch = async () => {
+  const runSearch = async (searchVal: string) => {
+    if (!searchVal.trim()) return;
+    latestSearchQuery.current = searchVal;
     setSearching(true);
+    setErrorMsg(null);
     setResults([]);
     try {
-      const r = await searchAnilist(query);
-      setResults(r);
-    } catch {
-      // ignore
+      const r = await searchAnilist(searchVal);
+      if (latestSearchQuery.current === searchVal) {
+        setResults(r);
+        if (r.length === 0) {
+          setErrorMsg("No results found on AniList for this query.");
+        }
+      }
+    } catch (e: any) {
+      if (latestSearchQuery.current === searchVal) {
+        setErrorMsg(e?.message || "Failed to search AniList.");
+      }
     } finally {
-      setSearching(false);
+      if (latestSearchQuery.current === searchVal) {
+        setSearching(false);
+      }
     }
   };
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    setErrorMsg(null); // Clear error message immediately on keystroke
+
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    if (val.trim().length >= 4) {
+      const timeout = setTimeout(() => {
+        runSearch(val);
+      }, 400); // 400ms debounce
+      setSearchTimeout(timeout);
+    } else if (val.trim().length === 0) {
+      setResults([]);
+    }
+  };
+
+  // Auto-search on mount when expanded
+  useEffect(() => {
+    if (expanded && results.length === 0 && query.trim().length >= 3) {
+      runSearch(query);
+    }
+  }, [expanded]);
 
   const pick = async (media: AniListMedia) => {
     setPicking(String(media.id));
@@ -154,22 +197,31 @@ function SeriesRow({
           <div className="flex gap-2">
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runSearch(query)}
               placeholder="Search AniList for the correct title…"
               className="glass flex-1 rounded-xl bg-transparent px-3 py-2 text-sm outline-none placeholder:text-yuui-muted"
             />
             <button
-              onClick={runSearch}
+              onClick={() => runSearch(query)}
               disabled={searching}
-              className="rounded-xl bg-gradient-to-r from-yuui-accent to-yuui-accent2 px-4 py-2 text-sm font-semibold text-white shadow-glow disabled:opacity-50"
+              className="rounded-xl bg-gradient-to-r from-yuui-accent to-yuui-accent2 px-4 py-2 text-sm font-semibold text-white shadow-glow disabled:opacity-50 cursor-pointer"
             >
               {searching ? "…" : "Search"}
             </button>
+            {entry.files[0]?.path && (
+              <button
+                onClick={() => revealItemInDir(entry.files[0].path)}
+                title="Reveal folder location"
+                className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 p-2 flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              >
+                <FolderOpen className="h-5 w-5" />
+              </button>
+            )}
           </div>
 
           {results.length > 0 && (
-            <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
+            <div className="mt-4 flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
               {results.map((m) => (
                 <CandidateCard
                   key={m.id}
@@ -181,7 +233,14 @@ function SeriesRow({
             </div>
           )}
 
-          {!searching && results.length === 0 && expanded && (
+          {errorMsg && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-200">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {!searching && results.length === 0 && !errorMsg && expanded && (
             <p className="mt-3 text-xs text-yuui-muted">
               Run a search to see AniList candidates, then pin the correct one.
               Pinned matches survive re-scans.
@@ -221,7 +280,7 @@ export default function ReviewPage() {
       </div>
 
       {/* List */}
-      <div className="flex-1 space-y-3 overflow-y-auto px-6 py-6">
+      <div className="flex-1 space-y-3 overflow-y-auto px-6 py-6 scroll-smooth scrollbar-thin">
         {review.map((entry) => (
           <SeriesRow
             key={entry.key}

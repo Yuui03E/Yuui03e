@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { FolderOpen, Copy, Check } from "lucide-react";
 import type { StoredEntry } from "../../../lib/types";
 import { formatBytes } from "../../../lib/format";
 import { Section } from "../components/Section";
@@ -16,18 +19,34 @@ export function OwnedFilesTable({
   entry: StoredEntry;
   setActiveVideo: React.Dispatch<React.SetStateAction<ActiveVideo | null>>;
 }) {
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string) => {
+    invoke("copy_to_clipboard", { text })
+      .then(() => {
+        // Success
+      })
+      .catch((err) => {
+        console.error("Backend copy_to_clipboard failed", err);
+      });
+  };
+
   return (
     <Section title={`Your Files (${entry.files.length})`}>
       <div className="max-w-4xl overflow-hidden rounded-2xl border border-white/[0.06]">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-left text-sm table-auto border-collapse">
           <thead className="bg-white/[0.03] text-xs uppercase tracking-wider text-yuui-muted">
             <tr>
-              <th className="px-4 py-2">Ep</th>
-              <th className="px-4 py-2">File</th>
-              <th className="px-4 py-2">Group</th>
-              <th className="px-4 py-2">Quality</th>
-              <th className="px-4 py-2 text-right">Size</th>
-              <th className="px-4 py-2 text-right">Action</th>
+              <th className="px-4 py-2 w-12 whitespace-nowrap">Ep</th>
+              <th className="px-4 py-2 w-auto min-w-[600px]">File</th>
+              <th className="px-4 py-2 w-24 whitespace-nowrap">Group</th>
+              <th className="px-4 py-2 w-32 whitespace-nowrap">Quality</th>
+              <th className="px-4 py-2 w-24 text-right whitespace-nowrap">
+                Size
+              </th>
+              <th className="px-4 py-2 w-32 text-right whitespace-nowrap">
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -36,23 +55,48 @@ export function OwnedFilesTable({
                 key={f.path}
                 className="border-t border-white/[0.04] hover:bg-white/[0.02]"
               >
-                <td className="px-4 py-2 text-yuui-muted">
+                <td className="px-4 py-2 text-yuui-muted whitespace-nowrap">
                   {f.episode ?? "—"}
                 </td>
-                <td className="max-w-[360px] truncate px-4 py-2 text-white/80">
-                  {f.file_name}
+                <td className="px-4 py-2 text-white/80 break-all whitespace-normal">
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between group">
+                    <span className="leading-relaxed pr-4">{f.file_name}</span>
+                    <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity duration-200 shrink-0 mt-1 sm:mt-0">
+                      <button
+                        onClick={() => revealItemInDir(f.path)}
+                        title="Reveal in File Explorer"
+                        className="p-1 rounded hover:bg-white/10 text-white/70 hover:text-white transition-all cursor-pointer"
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          copyToClipboard(f.file_name);
+                          setCopiedPath(f.path);
+                          setTimeout(() => setCopiedPath(null), 2000);
+                        }}
+                        title="Copy filename"
+                        className="p-1 rounded hover:bg-white/10 text-white/70 hover:text-white transition-all cursor-pointer"
+                      >
+                        {copiedPath === f.path ? (
+                          <Check className="h-4 w-4 text-emerald-400 animate-pulse" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </td>
-                <td className="px-4 py-2 text-white/70">
+                <td className="px-4 py-2 text-white/70 whitespace-nowrap">
                   {f.release_group ?? "—"}
                 </td>
-                <td className="px-4 py-2 text-white/70">
-                  {[f.resolution, f.codec].filter(Boolean).join(" · ") ||
-                    "—"}
+                <td className="px-4 py-2 text-white/70 whitespace-nowrap">
+                  {[f.resolution, f.codec].filter(Boolean).join(" · ") || "—"}
                 </td>
-                <td className="px-4 py-2 text-right text-white/60 font-mono">
+                <td className="px-4 py-2 text-right text-white/60 font-mono whitespace-nowrap">
                   {formatBytes(f.size_bytes)}
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-right whitespace-nowrap">
                   <div className="flex justify-end gap-1.5">
                     <button
                       onClick={() =>

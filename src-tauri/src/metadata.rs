@@ -62,6 +62,8 @@ pub struct AniListMedia {
     pub average_score: Option<i64>,
     #[serde(default)]
     pub genres: Vec<String>,
+    #[serde(default)]
+    pub synonyms: Vec<String>,
     #[serde(rename = "coverImage", default)]
     pub cover_image: AniListCoverImage,
     #[serde(rename = "bannerImage")]
@@ -86,6 +88,7 @@ impl AniListMedia {
             "episodes": self.episodes,
             "averageScore": self.average_score,
             "genres": self.genres,
+            "synonyms": self.synonyms,
             "coverImage": {
                 "extraLarge": self.cover_image.extra_large,
                 "large": self.cover_image.large,
@@ -107,7 +110,7 @@ pub struct LibraryEntry {
 
 const SEARCH_QUERY: &str = r#"
 query ($search: String) {
-  Page(perPage: 5) {
+  Page(perPage: 8) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
       id
       title { romaji english native }
@@ -119,6 +122,7 @@ query ($search: String) {
       episodes
       averageScore
       genres
+      synonyms
       coverImage { extraLarge large color }
       bannerImage
     }
@@ -493,26 +497,65 @@ pub async fn fetch_detail(media_id: i64, token: Option<String>) -> Result<serde_
 }
 
 /// Score a candidate title against the query using normalized similarity.
+/// Checks romaji, english, native titles AND synonyms.
+/// Applies a substring bonus when the query is an exact substring of a
+/// candidate (or vice versa) after normalization.
 fn score(query: &str, media: &AniListMedia) -> f64 {
     let q = parser::normalize_title(query);
-    let candidates = [
-        media.title.romaji.as_deref(),
-        media.title.english.as_deref(),
-        media.title.native.as_deref(),
-    ];
-    candidates
-        .iter()
-        .flatten()
-        .map(|t| strsim::jaro_winkler(&q, &parser::normalize_title(t)))
-        .fold(0.0, f64::max)
+    if q.is_empty() {
+        return 0.0;
+    }
+
+    // Collect all candidate titles: romaji, english, native + synonyms
+    let mut candidates: Vec<&str> = Vec::new();
+    if let Some(ref r) = media.title.romaji {
+        candidates.push(r);
+    }
+    if let Some(ref e) = media.title.english {
+        candidates.push(e);
+    }
+    if let Some(ref n) = media.title.native {
+        candidates.push(n);
+    }
+    for syn in &media.synonyms {
+        candidates.push(syn);
+    }
+
+    let mut best = 0.0_f64;
+
+    for t in &candidates {
+        let nt = parser::normalize_title(t);
+        if nt.is_empty() {
+            continue;
+        }
+
+        // Base Jaro-Winkler score
+        let jw = strsim::jaro_winkler(&q, &nt);
+
+        // Substring bonus: if one is an exact substring of the other,
+        // boost the score (helps with titles like "Eiken" matching "Eiken")
+        let substring_bonus = if q == nt {
+            0.10 // Exact match bonus
+        } else if nt.contains(&q) || q.contains(&*nt) {
+            0.05 // Substring match bonus
+        } else {
+            0.0
+        };
+
+        let final_score = (jw + substring_bonus).min(1.0);
+        best = best.max(final_score);
+    }
+
+    best
 }
 
 /// Adaptive confidence threshold for matching.
+/// Slightly lowered to work with the multi-query retry strategy.
 fn adaptive_threshold(normalized_title: &str) -> f64 {
     if normalized_title.len() <= 12 {
-        0.90
+        0.88
     } else {
-        0.85
+        0.82
     }
 }
 
@@ -607,35 +650,106 @@ pub async fn match_series_with_progress(
             },
         );
 
-        let (results, err) =
-            anilist_search_with_retry(&CLIENT, &s.title, token_ref, Some(&cancel_flag)).await;
+        // --- Multi-query retry strategy ---
+        // Build a list of search queries to try, from most specific to least.
+        let mut search_queries: Vec<String> = Vec::new();
+
+        // Attempt 1: Original title as-is
+        search_queries.push(s.title.clone());
+
+        // Attempt 2: Search-normalized title (suffix stripped, chars collapsed)
+        let search_norm = parser::normalize_for_search(&s.title);
+        if search_norm != s.title && !search_norm.is_empty() {
+            search_queries.push(search_norm);
+        }
+
+        // Attempt 3: Title with common suffixes stripped
+        let (stripped, was_stripped) = parser::strip_common_suffixes(&s.title);
+        if was_stripped && !stripped.is_empty() && !search_queries.contains(&stripped) {
+            search_queries.push(stripped);
+        }
+
+        // Attempt 4: Folder name (if different from parsed title)
+        let folder_title = s.folder.clone();
+        if !folder_title.is_empty()
+            && parser::normalize_title(&folder_title) != parser::normalize_title(&s.title)
+            && !search_queries.iter().any(|q| parser::normalize_title(q) == parser::normalize_title(&folder_title))
+        {
+            search_queries.push(folder_title);
+        }
+
+        // Attempt 5: Shortened title (first 3 words) for very long titles
+        let words: Vec<&str> = s.title.split_whitespace().collect();
+        if words.len() > 4 {
+            let short = words[..3].join(" ");
+            if !search_queries.contains(&short) {
+                search_queries.push(short);
+            }
+        }
+
+        // Deduplicate by normalized form
+        let mut seen_norms = std::collections::HashSet::new();
+        search_queries.retain(|q| {
+            let n = parser::normalize_title(q);
+            !n.is_empty() && seen_norms.insert(n)
+        });
+
+        let threshold = adaptive_threshold(&key);
+        let mut best_confidence = 0.0_f64;
+        let mut best_media: Option<AniListMedia> = None;
+        let mut last_err: Option<String> = None;
+
+        for query in &search_queries {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let (results, err) =
+                anilist_search_with_retry(&CLIENT, query, token_ref, Some(&cancel_flag)).await;
+
+            if let Some(ref e) = err {
+                last_err = Some(e.clone());
+            }
+
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            // Score all results against the ORIGINAL title (not the search query)
+            // to ensure consistent scoring regardless of which query found it.
+            let candidate = results
+                .into_iter()
+                .map(|m| {
+                    let sc = score(&s.title, &m);
+                    (sc, m)
+                })
+                .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some((sc, m)) = candidate {
+                if sc > best_confidence {
+                    best_confidence = sc;
+                    best_media = Some(m);
+                }
+                // If we found a confident match, stop trying more queries
+                if best_confidence >= threshold {
+                    last_err = None; // Clear error since we found a match
+                    break;
+                }
+            }
+        }
 
         // If cancelled during search, stop
         if cancel_flag.load(Ordering::Relaxed) {
             break;
         }
 
-        let best = results
-            .into_iter()
-            .map(|m| {
-                let sc = score(&s.title, &m);
-                (sc, m)
-            })
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let matched = best_confidence >= threshold;
 
-        let (confidence, media) = match best {
-            Some((sc, m)) => (sc, Some(m)),
-            None => (0.0, None),
-        };
-
-        let threshold = adaptive_threshold(&key);
-        let matched = confidence >= threshold;
-
-        let status_str = if err.is_some() {
+        let status_str = if last_err.is_some() {
             "error"
         } else if matched {
             "matched"
-        } else if media.is_some() {
+        } else if best_media.is_some() {
             "low_confidence"
         } else {
             "not_found"
@@ -644,8 +758,8 @@ pub async fn match_series_with_progress(
         let entry = LibraryEntry {
             key: key.clone(),
             scanned: s,
-            media: media.map(|m| m.to_frontend()),
-            confidence,
+            media: best_media.map(|m| m.to_frontend()),
+            confidence: best_confidence,
             matched,
         };
 
@@ -657,7 +771,7 @@ pub async fn match_series_with_progress(
                 total,
                 title: entry.scanned.title.clone(),
                 status: status_str.to_string(),
-                message: err.clone(),
+                message: last_err.clone(),
             },
         );
 
@@ -674,28 +788,60 @@ pub async fn match_series(series: Vec<ScannedSeries>) -> Result<Vec<LibraryEntry
 
     for s in series {
         let key = parser::normalize_title(&s.title);
-        let results = anilist_search(&CLIENT, &s.title).await.unwrap_or_default();
 
-        let best = results
-            .into_iter()
-            .map(|m| {
-                let sc = score(&s.title, &m);
-                (sc, m)
-            })
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Build multi-query list (same strategy as match_series_with_progress)
+        let mut search_queries: Vec<String> = vec![s.title.clone()];
 
-        let (confidence, media) = match best {
-            Some((sc, m)) => (sc, Some(m)),
-            None => (0.0, None),
-        };
+        let search_norm = parser::normalize_for_search(&s.title);
+        if search_norm != s.title && !search_norm.is_empty() {
+            search_queries.push(search_norm);
+        }
+
+        let (stripped, was_stripped) = parser::strip_common_suffixes(&s.title);
+        if was_stripped && !stripped.is_empty() && !search_queries.contains(&stripped) {
+            search_queries.push(stripped);
+        }
+
+        let folder_title = s.folder.clone();
+        if !folder_title.is_empty()
+            && parser::normalize_title(&folder_title) != parser::normalize_title(&s.title)
+            && !search_queries.iter().any(|q| parser::normalize_title(q) == parser::normalize_title(&folder_title))
+        {
+            search_queries.push(folder_title);
+        }
 
         let threshold = adaptive_threshold(&key);
-        let matched = confidence >= threshold;
+        let mut best_confidence = 0.0_f64;
+        let mut best_media: Option<AniListMedia> = None;
+
+        for query in &search_queries {
+            let results = anilist_search(&CLIENT, query).await.unwrap_or_default();
+
+            let candidate = results
+                .into_iter()
+                .map(|m| {
+                    let sc = score(&s.title, &m);
+                    (sc, m)
+                })
+                .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some((sc, m)) = candidate {
+                if sc > best_confidence {
+                    best_confidence = sc;
+                    best_media = Some(m);
+                }
+                if best_confidence >= threshold {
+                    break;
+                }
+            }
+        }
+
+        let matched = best_confidence >= threshold;
         out.push(LibraryEntry {
             key,
             scanned: s,
-            media: media.map(|m| m.to_frontend()),
-            confidence,
+            media: best_media.map(|m| m.to_frontend()),
+            confidence: best_confidence,
             matched,
         });
     }

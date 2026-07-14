@@ -36,6 +36,18 @@ static RE_SEASON: Lazy<Regex> =
 static RE_EP: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)(?:\bE|\bEp\.?\s*|\-\s*|\s)0*(\d{1,3})(?:v\d)?\b").unwrap());
 
+/// Known Japanese honorific suffixes that appear after a dash in titles.
+/// These should NOT be treated as episode separators.
+static RE_HONORIFIC: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^(san|kun|chan|sama|sensei|senpai|tan|dono|nee|nii|onee|onii)\b").unwrap()
+});
+
+/// Common suffixes appended to anime titles that AniList may not include.
+static RE_SUFFIX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\s+(The\s+Animation|The\s+Anime|The\s+Motion\s+Picture|The\s+Movie)\s*$")
+        .unwrap()
+});
+
 /// Remove all `[...]` and `(...)` bracket groups from a string.
 fn strip_brackets(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -63,6 +75,93 @@ pub fn normalize_title(s: &str) -> String {
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect();
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Strip common distribution suffixes like "The Animation", "The Anime".
+/// Returns the title without the suffix and whether a suffix was stripped.
+pub fn strip_common_suffixes(title: &str) -> (String, bool) {
+    if let Some(m) = RE_SUFFIX.find(title) {
+        (title[..m.start()].trim().to_string(), true)
+    } else {
+        (title.to_string(), false)
+    }
+}
+
+/// Collapse single-character words that are likely a spaced-out title.
+/// e.g. "Ko Ko Ro" → "Kokoro", "D N Angel" → "DN Angel"
+/// Only collapses runs of 2+ consecutive single-char words.
+pub fn collapse_spaced_chars(title: &str) -> Option<String> {
+    let words: Vec<&str> = title.split_whitespace().collect();
+    if words.len() < 2 {
+        return None;
+    }
+
+    // Check if there's at least one run of 2+ consecutive single-char words
+    let mut has_run = false;
+    let mut run_len = 0;
+    for w in &words {
+        if w.chars().count() == 1 && w.chars().next().map_or(false, |c| c.is_alphabetic()) {
+            run_len += 1;
+            if run_len >= 2 {
+                has_run = true;
+                break;
+            }
+        } else {
+            run_len = 0;
+        }
+    }
+
+    if !has_run {
+        return None;
+    }
+
+    // Collapse: merge consecutive single-char words
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        if words[i].chars().count() == 1
+            && words[i].chars().next().map_or(false, |c| c.is_alphabetic())
+        {
+            // Start of a potential single-char run
+            let mut merged = String::new();
+            while i < words.len()
+                && words[i].chars().count() == 1
+                && words[i].chars().next().map_or(false, |c| c.is_alphabetic())
+            {
+                merged.push_str(words[i]);
+                i += 1;
+            }
+            result.push(merged);
+        } else {
+            result.push(words[i].to_string());
+            i += 1;
+        }
+    }
+
+    let collapsed = result.join(" ");
+    if collapsed != title {
+        Some(collapsed)
+    } else {
+        None
+    }
+}
+
+/// Aggressively normalize a title for AniList search.
+/// Strips suffixes, collapses spaced chars, removes problematic punctuation.
+pub fn normalize_for_search(title: &str) -> String {
+    let mut t = title.to_string();
+
+    // Strip common suffixes
+    let (stripped, _) = strip_common_suffixes(&t);
+    t = stripped;
+
+    // Collapse spaced-out single chars
+    if let Some(collapsed) = collapse_spaced_chars(&t) {
+        t = collapsed;
+    }
+
+    // Clean up: collapse whitespace, trim
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn parse(path: &str, file_name: &str, size_bytes: u64) -> ParsedFile {
@@ -107,7 +206,13 @@ pub fn parse(path: &str, file_name: &str, size_bytes: u64) -> ParsedFile {
     let core = core.trim();
 
     // Episode: prefer a match after a dash if present.
-    let episode = extract_episode(core);
+    let mut episode = extract_episode(core);
+    if episode.is_none() {
+        let numeric_only: String = core.chars().filter(|c| c.is_ascii_digit()).collect();
+        if !numeric_only.is_empty() && numeric_only.len() == core.trim().len() {
+            episode = numeric_only.parse::<u32>().ok();
+        }
+    }
 
     // Title: text before the episode delimiter.
     let title = extract_title(core, &crc);
@@ -128,17 +233,76 @@ pub fn parse(path: &str, file_name: &str, size_bytes: u64) -> ParsedFile {
     }
 }
 
+/// Check if the text after a dash is a Japanese honorific (not an episode number).
+fn is_honorific_after_dash(after_dash: &str) -> bool {
+    RE_HONORIFIC.is_match(after_dash.trim())
+}
+
+/// Check if a dash is part of a title (e.g. "25-sai", "Re-Zero") rather than
+/// an episode separator. A dash is a title-dash if the text after it starts
+/// with alphabetic characters (not digits).
+fn is_title_dash(after_dash: &str) -> bool {
+    let trimmed = after_dash.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let first = trimmed.chars().next().unwrap();
+    // If it starts with a letter, it's part of the title (e.g. "-sai", "-san")
+    // If it starts with a digit, it's likely an episode number
+    first.is_alphabetic() || is_honorific_after_dash(trimmed)
+}
+
 fn extract_episode(core: &str) -> Option<u32> {
-    // Prefer the "- NN" style which is the most reliable delimiter.
-    if let Some(idx) = core.rfind('-') {
-        let after = core[idx + 1..].trim();
-        let num: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    // Prefer the " - NN" style (dash with space before it) which is the most
+    // reliable delimiter for standard release filenames.
+    // We scan from the RIGHT to find the last suitable episode-dash.
+    let bytes = core.as_bytes();
+    let mut best_episode: Option<u32> = None;
+
+    // Find all dash positions and check from rightmost
+    let dash_positions: Vec<usize> = core
+        .char_indices()
+        .filter(|(_, c)| *c == '-')
+        .map(|(i, _)| i)
+        .collect();
+
+    for &idx in dash_positions.iter().rev() {
+        let after = &core[idx + 1..];
+        let after_trimmed = after.trim();
+
+        // Skip if text after dash is a known honorific or starts with a letter
+        if is_title_dash(after) {
+            continue;
+        }
+
+        // Extract digits after the dash
+        let num: String = after_trimmed
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+
         if !num.is_empty() {
             if let Ok(n) = num.parse::<u32>() {
-                return Some(n);
+                // Sanity check: episode numbers are typically < 2000
+                if n < 2000 {
+                    // Prefer " - NN" (with space before dash) over "Title-NN"
+                    let has_space_before = idx > 0 && bytes[idx - 1] == b' ';
+                    if has_space_before || best_episode.is_none() {
+                        best_episode = Some(n);
+                        if has_space_before {
+                            return best_episode; // Highest confidence
+                        }
+                    }
+                }
             }
         }
     }
+
+    if best_episode.is_some() {
+        return best_episode;
+    }
+
+    // Fallback to regex patterns (E12, Ep12, etc.)
     RE_EP
         .captures(core)
         .and_then(|c| c.get(1))
@@ -147,9 +311,41 @@ fn extract_episode(core: &str) -> Option<u32> {
 
 fn extract_title(core: &str, crc: &Option<String>) -> Option<String> {
     let mut t = core.to_string();
-    if let Some(idx) = t.rfind('-') {
+
+    // Find the episode-separator dash (the last dash that leads to digits,
+    // skipping dashes that are part of the title like "-sai", "-san").
+    let mut split_idx: Option<usize> = None;
+
+    let dash_positions: Vec<usize> = t
+        .char_indices()
+        .filter(|(_, c)| *c == '-')
+        .map(|(i, _)| i)
+        .collect();
+
+    for &idx in dash_positions.iter().rev() {
+        let after = &t[idx + 1..];
+        if is_title_dash(after) {
+            continue;
+        }
+        let after_trimmed = after.trim();
+        let num: String = after_trimmed
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if !num.is_empty() {
+            if let Ok(n) = num.parse::<u32>() {
+                if n < 2000 {
+                    split_idx = Some(idx);
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(idx) = split_idx {
         t = t[..idx].to_string();
     }
+
     // Drop trailing resolution/codec/crc leftovers.
     if let Some(crc) = crc {
         t = t.replace(crc, "");

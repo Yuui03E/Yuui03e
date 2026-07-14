@@ -4,7 +4,10 @@
       "Bash(npx tsc *)",
       "Bash(cargo check *)",
       "Bash(npx vite *)",
-      "Bash(echo \"EXIT $?\")"
+      "Bash(echo \"EXIT $?\")",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: backend clipboard command, AniList synonyms, parser/scanner improvements, and UI refinements *)",
+      "Bash(git push *)"
     ]
   }
 }

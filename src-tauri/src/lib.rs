@@ -55,6 +55,33 @@ pub fn run() {
 
             let pool = tauri::async_runtime::block_on(db::init(db_path))
                 .expect("failed to initialize database");
+
+            // Automatically check and add E:\AB\[]Unfinisehd if it exists on disk
+            let target_path = r"E:\AB\[]Unfinisehd";
+            if std::path::Path::new(target_path).exists() {
+                let current = tauri::async_runtime::block_on(db::get_setting(&pool, "library_folder")).unwrap_or(None);
+                let new_value = match current {
+                    Some(val) => {
+                        let mut folders: Vec<String> = val
+                            .split(';')
+                            .map(|s| s.to_string())
+                            .filter(|s| !s.trim().is_empty())
+                            .collect();
+                        let target = target_path.to_string();
+                        if !folders.iter().any(|f| f.eq_ignore_ascii_case(&target)) {
+                            folders.push(target);
+                            Some(folders.join(";"))
+                        } else {
+                            None
+                        }
+                    }
+                    None => Some(target_path.to_string()),
+                };
+                if let Some(val) = new_value {
+                    let _ = tauri::async_runtime::block_on(db::set_setting(&pool, "library_folder", &val));
+                }
+            }
+
             // Start background preview generation queue worker
             crate::media::start_preview_worker(pool.clone(), cache_dir.clone());
 
@@ -86,6 +113,8 @@ pub fn run() {
             // Settings validation
             commands::test_anidb_credentials,
             commands::test_ffmpeg_path,
+            // Clipboard
+            commands::copy_to_clipboard,
             // Sync control
             commands::cancel_sync,
             commands::pause_sync,
