@@ -23,7 +23,7 @@ pub fn err_string<E: std::fmt::Display>(e: E) -> String {
 pub fn http_client() -> &'static reqwest::Client {
     static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         reqwest::Client::builder()
-            .user_agent("Yuui/0.1 (+https://github.com/yuui)")
+            .user_agent("Yuui/2.0 (+https://github.com/yuui)")
             .build()
             .expect("failed to build global reqwest client")
     });
