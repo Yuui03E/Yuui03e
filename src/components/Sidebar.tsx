@@ -13,15 +13,8 @@ import {
   User,
   PanelLeftClose,
   PanelLeft,
+  BookOpen,
 } from "lucide-react";
-
-const NAV_ITEMS = [
-  { to: "/", label: "Library", Icon: Grid },
-  { to: "/review", label: "Review", Icon: FileCheck },
-  { to: "/discover", label: "Discover", Icon: Compass },
-  { to: "/calendar", label: "Calendar", Icon: Calendar },
-  { to: "/settings", label: "Settings", Icon: Settings },
-];
 
 // Shared box + icon dimensions so every option matches.
 const BTN_CLS =
@@ -82,7 +75,7 @@ function SidebarNavItem({
 }
 
 export default function Sidebar() {
-  const { anilistUser } = useLibrary();
+  const { anilistUser, mangadexEnabled } = useLibrary();
   const [hidden, setHidden] = useState(
     () => localStorage.getItem("yuui_sidebar_hidden") === "true",
   );
@@ -114,7 +107,16 @@ export default function Sidebar() {
 
             {/* Top: navigation — one evenly-spaced, aligned column */}
             <div className="flex flex-col items-center gap-2">
-              {NAV_ITEMS.map((item) => (
+              {[
+                { to: "/", label: "Library", Icon: Grid },
+                { to: "/review", label: "Review", Icon: FileCheck },
+                { to: "/discover", label: "Discover", Icon: Compass },
+                { to: "/calendar", label: "Calendar", Icon: Calendar },
+                ...(mangadexEnabled
+                  ? [{ to: "/mangadex", label: "MangaDex", Icon: BookOpen }]
+                  : []),
+                { to: "/settings", label: "Settings", Icon: Settings },
+              ].map((item) => (
                 <SidebarNavItem
                   key={item.to}
                   to={item.to}

@@ -104,6 +104,17 @@ pub fn run() {
             commands::resume_sync,
             commands::remove_folder_entries,
             commands::remove_file_entries,
+            // MangaDex API proxy
+            commands::mangadex_get,
+            // MangaDex favorites + reading history
+            commands::mangadex_add_favorite,
+            commands::mangadex_remove_favorite,
+            commands::mangadex_is_favorite,
+            commands::mangadex_list_favorites,
+            commands::mangadex_save_reading_progress,
+            commands::mangadex_get_reading_progress,
+            commands::mangadex_list_history,
+            commands::mangadex_clear_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

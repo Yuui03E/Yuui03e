@@ -10,6 +10,7 @@ mod entries;
 mod user_data;
 mod caches;
 mod playback;
+mod mangadex;
 
 pub use schema::init;
 pub use entries::{UserData, StoredEntry, upsert_entry, all_entries, entry_by_key};
@@ -19,6 +20,10 @@ pub use caches::{get_detail, put_detail, placeholders, refresh_series_aggregates
                  get_tmdb_id, put_tmdb_id, get_backdrops, put_backdrops};
 pub use playback::{PlaybackHistoryEntry, save_playback_position, get_playback_position,
                    delete_playback_position, recent_playback};
+pub use mangadex::{LibraryEntry, ProgressRow, HistoryRow, FavoritePayload,
+                   add_favorite, remove_favorite, is_favorite, list_favorites,
+                   save_reading_progress, get_reading_progress, list_history,
+                   clear_history as clear_manga_history};
 
 /// Wrapper so we can `app.manage(Db(pool, cache_dir))` and pull it out of Tauri state.
 pub struct Db(pub SqlitePool, pub std::path::PathBuf);

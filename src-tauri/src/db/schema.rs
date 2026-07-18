@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_BASE: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -110,6 +110,26 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "4_add_preview_cache_columns",
         "ALTER TABLE files ADD COLUMN sprite_preview TEXT;
          ALTER TABLE files ADD COLUMN video_preview TEXT;",
+    ),
+    (
+        "5_add_mangadex_tables",
+        "CREATE TABLE IF NOT EXISTS manga_library (
+            manga_id        TEXT PRIMARY KEY,
+            added_at        INTEGER NOT NULL,
+            is_favorite     INTEGER NOT NULL DEFAULT 0,
+            title           TEXT,
+            cover_url       TEXT,
+            content_rating  TEXT
+         );
+         CREATE TABLE IF NOT EXISTS manga_reading_history (
+            chapter_id      TEXT PRIMARY KEY,
+            manga_id        TEXT NOT NULL,
+            chapter_number  TEXT,
+            read_at         INTEGER NOT NULL,
+            progress        REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (manga_id) REFERENCES manga_library(manga_id) ON DELETE CASCADE
+         );
+         CREATE INDEX IF NOT EXISTS idx_manga_reading_history_manga ON manga_reading_history(manga_id);",
     ),
 ];
 

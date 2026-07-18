@@ -4,11 +4,13 @@
 //! re-exported so `commands::fn_name` paths in `generate_handler![]` keep
 //! working.
 
+mod mangadex;
 mod misc;
 mod playback;
 mod settings;
 mod sync;
 
+pub use mangadex::*;
 pub use misc::*;
 pub use playback::*;
 pub use settings::*;

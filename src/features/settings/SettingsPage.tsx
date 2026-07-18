@@ -5,6 +5,7 @@ import { PerformanceSection } from "./sections/PerformanceSection";
 import { SystemInfoSection } from "./sections/SystemInfoSection";
 import { TmdbSection } from "./sections/TmdbSection";
 import { AnilistSection } from "./sections/AnilistSection";
+import { MangadexSection } from "./sections/MangadexSection";
 
 export default function SettingsPage() {
   return (
@@ -41,6 +42,9 @@ export default function SettingsPage() {
 
         {/* AniList Integration Section */}
         <AnilistSection />
+
+        {/* MangaDex Integration Section */}
+        <MangadexSection />
       </div>
     </div>
   );

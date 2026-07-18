@@ -12,6 +12,9 @@ import SettingsPage from "./features/settings/SettingsPage";
 import CalendarPage from "./features/calendar/CalendarPage";
 import DiscoverPage from "./features/discover/DiscoverPage";
 import ProfilePage from "./features/library/ProfilePage";
+import MangadexPage from "./features/mangadex/MangadexPage";
+import MangaDetail from "./features/mangadex/MangaDetail";
+import ChapterReader from "./features/mangadex/ChapterReader";
 
 function Page({ children }: { children: React.ReactNode }) {
   return (
@@ -102,6 +105,30 @@ export default function App() {
                   element={
                     <Page>
                       <SettingsPage />
+                    </Page>
+                  }
+                />
+                <Route
+                  path="/mangadex"
+                  element={
+                    <Page>
+                      <MangadexPage />
+                    </Page>
+                  }
+                />
+                <Route
+                  path="/mangadex/manga/:id"
+                  element={
+                    <Page>
+                      <MangaDetail />
+                    </Page>
+                  }
+                />
+                <Route
+                  path="/mangadex/reader/:chapterId"
+                  element={
+                    <Page>
+                      <ChapterReader />
                     </Page>
                   }
                 />

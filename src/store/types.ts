@@ -128,5 +128,31 @@ export interface EntrySlice {
   searchAnilist: (query: string) => Promise<AniListMedia[]>;
 }
 
+export type MangadexReaderMode = "paged" | "scroll";
+export type MangadexReaderFit = "width" | "height" | "original";
+
+export interface MangadexSlice {
+  mangadexEnabled: boolean;
+  // Persisted MangaDex default-filters + reader prefs (Phase D.2).
+  mangadexContentRating: string[]; // default ["safe","suggestive"]
+  mangadexTranslatedLanguage: string; // default "en"
+  mangadexOriginalLanguageFilter: string | null; // default null (any)
+  mangadexReaderMode: MangadexReaderMode; // default "paged"
+  mangadexReaderFit: MangadexReaderFit; // default "width"
+
+  setMangadexEnabled: (enabled: boolean) => Promise<void>;
+  setMangadexContentRating: (ratings: string[]) => Promise<void>;
+  setMangadexTranslatedLanguage: (lang: string) => Promise<void>;
+  setMangadexOriginalLanguageFilter: (lang: string | null) => Promise<void>;
+  setMangadexReaderMode: (mode: MangadexReaderMode) => Promise<void>;
+  setMangadexReaderFit: (fit: MangadexReaderFit) => Promise<void>;
+}
+
 export interface LibraryState
-  extends ThemeSlice, BackdropSlice, AnilistSlice, SyncSlice, EntrySlice {}
+  extends
+    ThemeSlice,
+    BackdropSlice,
+    AnilistSlice,
+    SyncSlice,
+    EntrySlice,
+    MangadexSlice {}
