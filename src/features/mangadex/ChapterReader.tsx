@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Maximize2,
-  Minimize2,
-  Move,
-} from "lucide-react";
-import { getChapterPages, getChapters, getMangaDetail, saveReadingProgress } from "./api";
+  getChapterPages,
+  getChapters,
+  getMangaDetail,
+  saveReadingProgress,
+} from "./api";
 import type { ChapterInfo } from "./api";
 import type { MangaDexPage } from "./types";
 import { useLibrary } from "../../store/library";
@@ -23,13 +21,26 @@ type FitMode = "width" | "height" | "original";
  *  Set by MangaDetail just before navigating to the reader. */
 declare global {
   interface Window {
-    __mdNav?: { 
+    __mdNav?: {
       mangaId?: string;
       title?: string;
       coverUrl?: string;
     };
   }
 }
+
+/** Map the resize-algorithm pref to the CSS `image-rendering` value. */
+const IMAGE_RENDERING: Record<string, React.CSSProperties["imageRendering"]> = {
+  best: "auto", // browser smooth (bilinear/lanczos) scaling
+  medium: "crisp-edges", // sharper lines, some aliasing
+  fast: "pixelated", // nearest-neighbor, fastest
+};
+
+const BACKGROUND_CLASS: Record<string, string> = {
+  black: "bg-black",
+  gray: "bg-neutral-800",
+  white: "bg-white",
+};
 
 function useMangaIdForChapter(chapterId: string | undefined): {
   mangaId: string | null;
@@ -68,18 +79,34 @@ export default function ChapterReader() {
   const {
     mangadexReaderMode,
     mangadexReaderFit,
+    mangadexReaderPrefs: prefs,
     setMangadexReaderMode,
     setMangadexReaderFit,
+    setMangadexReaderPrefs,
   } = useLibrary();
 
   const [pages, setPages] = useState<MangaDexPage[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [showControls, setShowControls] = useState(true);
+  // Controls visibility is two-layered: `autoVisible` follows mouse activity
+  // (reveals on move, fades after idle), while `userHidden` is the explicit
+  // "Hide Controls" toggle (H key / menu) that wins over mouse movement.
+  const [autoVisible, setAutoVisible] = useState(true);
+  const [userHidden, setUserHidden] = useState(false);
+  const showControls = autoVisible && !userHidden;
   // Right-click context menu position (null = closed).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { mangaId, allChapters } = useMangaIdForChapter(chapterId);
-  const [mangaDetail, setMangaDetail] = useState<{ title?: string; coverUrl?: string | null } | null>(null);
+  const [mangaDetail, setMangaDetail] = useState<{
+    title?: string;
+    coverUrl?: string | null;
+  } | null>(null);
+
+  const mode: ReaderMode = mangadexReaderMode;
+  const fit: FitMode = mangadexReaderFit;
+  const rtl = prefs.direction === "rtl";
+  // Pages advanced per step in paged mode (2 for double-page spreads).
+  const step = mode === "paged" && prefs.doublePage ? 2 : 1;
 
   useEffect(() => {
     if (!mangaId) return;
@@ -104,9 +131,6 @@ export default function ChapterReader() {
     };
   }, [mangaId]);
 
-  const mode: ReaderMode = mangadexReaderMode;
-  const fit: FitMode = mangadexReaderFit;
-
   // Sibling chapters (ascending by chapter number).
   const { prevChapter, nextChapter } = useMemo(() => {
     if (!chapterId || allChapters.length === 0)
@@ -125,21 +149,28 @@ export default function ChapterReader() {
     };
   }, [chapterId, allChapters]);
 
+  const chapterNumber =
+    allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
+
   // ---- Load chapter pages + persist initial progress ------------------
   useEffect(() => {
     if (!chapterId) return;
     setLoading(true);
-    getChapterPages(chapterId)
+    getChapterPages(chapterId, prefs.imageQuality)
       .then((p) => {
         setPages(p);
-        
+
         let initialPage = 0;
         const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
         if (cached) {
           const parts = cached.split("/");
           if (parts.length > 0) {
             const pageNum = parseInt(parts[0], 10);
-            if (!isNaN(pageNum) && pageNum > 0 && pageNum <= p.length) {
+            // Restore mid-chapter progress only. A saved position on the
+            // final page means the chapter was finished (or the position was
+            // poisoned by the old zero-height-observer bug) — restart from
+            // page 1 instead of opening at the end.
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum < p.length) {
               initialPage = pageNum - 1;
             }
           }
@@ -148,27 +179,37 @@ export default function ChapterReader() {
         setScrollPage(initialPage);
 
         if (mangaId) {
-          const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
+          const cn =
+            allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
           const frac = p.length > 0 ? (initialPage + 1) / p.length : 0;
-          saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail?.title, mangaDetail?.coverUrl).catch(() => {});
+          saveReadingProgress(
+            chapterId!,
+            mangaId,
+            cn,
+            frac,
+            mangaDetail?.title,
+            mangaDetail?.coverUrl,
+          ).catch(() => {});
         }
       })
       .catch(() => setPages([]))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterId, mangaId, mangaDetail]);
+  }, [chapterId, mangaId, mangaDetail, prefs.imageQuality]);
 
   // Scroll initial page into view in scroll mode
   useEffect(() => {
-    if (!loading && mode === "scroll" && currentPage > 0 && scrollRef.current) {
-      const targetImg = scrollRef.current.querySelector(`[data-page-idx="${currentPage}"]`);
+    if (!loading && currentPage > 0 && scrollRef.current) {
+      const targetImg = scrollRef.current.querySelector(
+        `[data-page-idx="${currentPage}"]`,
+      );
       if (targetImg) {
         setTimeout(() => {
           targetImg.scrollIntoView({ block: "start" });
         }, 120);
       }
     }
-  }, [loading, mode, currentPage]);
+  }, [loading, currentPage]);
 
   // Sync title and cover to DB as soon as details are loaded/resolved
   useEffect(() => {
@@ -180,13 +221,21 @@ export default function ChapterReader() {
         const parts = cached.split("/");
         if (parts.length > 0) {
           const pageNum = parseInt(parts[0], 10);
-          if (!isNaN(pageNum) && pageNum > 0 && pageNum <= pages.length) {
+          // Mid-chapter positions only (see the page-load effect above).
+          if (!isNaN(pageNum) && pageNum > 0 && pageNum < pages.length) {
             initialPage = pageNum - 1;
           }
         }
       }
       const frac = pages.length > 0 ? (initialPage + 1) / pages.length : 0;
-      saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail.title, mangaDetail.coverUrl).catch(() => {});
+      saveReadingProgress(
+        chapterId!,
+        mangaId,
+        cn,
+        frac,
+        mangaDetail.title,
+        mangaDetail.coverUrl,
+      ).catch(() => {});
     }
   }, [mangaId, mangaDetail, allChapters, chapterId, pages.length]);
 
@@ -195,22 +244,37 @@ export default function ChapterReader() {
   const persistProgress = (frac: number, pageIndex: number) => {
     if (!chapterId || !mangaId) return;
     const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
-    
+
     // Save current page info in localStorage for history view
     if (pages.length > 0) {
-      localStorage.setItem(`yuui_md_page_${chapterId}`, `${pageIndex + 1}/${pages.length}`);
+      localStorage.setItem(
+        `yuui_md_page_${chapterId}`,
+        `${pageIndex + 1}/${pages.length}`,
+      );
     }
 
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail?.title, mangaDetail?.coverUrl).catch(() => {});
+      saveReadingProgress(
+        chapterId!,
+        mangaId,
+        cn,
+        frac,
+        mangaDetail?.title,
+        mangaDetail?.coverUrl,
+      ).catch(() => {});
     }, 400);
   };
 
   // ---- Paged-mode navigation ------------------------------------------
   const goNext = () => {
-    if (currentPage < pages.length - 1) {
-      const np = currentPage + 1;
+    if (currentPage < pages.length - step) {
+      const np = Math.min(pages.length - 1, currentPage + step);
+      setCurrentPage(np);
+      persistProgress((np + 1) / pages.length, np);
+    } else if (currentPage < pages.length - 1) {
+      // Odd remainder in double-page mode: land on the final page.
+      const np = pages.length - 1;
       setCurrentPage(np);
       persistProgress((np + 1) / pages.length, np);
     } else if (nextChapter) {
@@ -220,7 +284,7 @@ export default function ChapterReader() {
 
   const goPrev = () => {
     if (currentPage > 0) {
-      const np = currentPage - 1;
+      const np = Math.max(0, currentPage - step);
       setCurrentPage(np);
       persistProgress((np + 1) / pages.length, np);
     } else if (prevChapter) {
@@ -232,6 +296,14 @@ export default function ChapterReader() {
     const np = Math.max(0, Math.min(pages.length - 1, page));
     setCurrentPage(np);
     persistProgress((np + 1) / pages.length, np);
+  };
+
+  /** Back to the manga detail page. `navigate(-1)` is wrong here after
+   *  chapter-to-chapter navigation (it would step through chapters), so go
+   *  to the detail route directly when we know the manga id. */
+  const goBackToManga = () => {
+    if (mangaId) navigate(`/mangadex/manga/${mangaId}`);
+    else navigate(-1);
   };
 
   // ---- Scroll mode: IntersectionObserver to track current page -------
@@ -247,6 +319,11 @@ export default function ChapterReader() {
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
+          // Ignore images that haven't loaded yet: lazy-loaded pages start at
+          // zero height, and zero-area elements report isIntersecting=true —
+          // on mount ALL pages "intersect" at once, which used to persist the
+          // last page as the reading position (chapter opened at the end).
+          if (e.boundingClientRect.height === 0) continue;
           if (e.isIntersecting) {
             const idx = Number((e.target as HTMLElement).dataset.pageIdx);
             if (!isNaN(idx)) {
@@ -263,67 +340,101 @@ export default function ChapterReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, pages.length]);
 
-  // ---- Keyboard shortcuts ---------------------------------------------
+  // ---- Keyboard shortcuts (rebindable via prefs.keys) ------------------
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowRight":
-          if (mode === "paged") goNext();
+      // Don't steal keys while typing in the context-menu inputs.
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      // Escape is fixed: close menu, else back to the manga.
+      if (e.key === "Escape") {
+        if (menu) setMenu(null);
+        else goBackToManga();
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      const k = prefs.keys;
+      switch (key) {
+        case k.prevPage:
+          // In RTL (manga) direction, the "prev" key advances instead.
+          if (mode === "paged") (rtl ? goNext : goPrev)();
           break;
-        case "ArrowLeft":
-          if (mode === "paged") goPrev();
+        case k.nextPage:
+          if (mode === "paged") (rtl ? goPrev : goNext)();
           break;
-        case "ArrowDown":
+        case k.scrollDown:
           if (mode === "scroll")
             scrollRef.current?.scrollBy({ top: 320, behavior: "smooth" });
           break;
-        case "ArrowUp":
+        case k.scrollUp:
           if (mode === "scroll")
             scrollRef.current?.scrollBy({ top: -320, behavior: "smooth" });
           break;
-        case "m":
-        case "M":
+        case k.toggleMode:
           setMangadexReaderMode(mode === "paged" ? "scroll" : "paged");
           break;
-        case "f":
-        case "F":
+        case k.cycleFit:
           setMangadexReaderFit(
-            fit === "width"
-              ? "height"
-              : fit === "height"
-                ? "original"
-                : "width",
+            fit === "width" ? "height" : fit === "height" ? "original" : "width",
           );
           break;
-        case "n":
-        case "N":
+        case k.nextChapter:
           if (nextChapter) navigate(`/mangadex/reader/${nextChapter.id}`);
           break;
-        case "p":
-        case "P":
+        case k.prevChapter:
           if (prevChapter) navigate(`/mangadex/reader/${prevChapter.id}`);
           break;
-        case "h":
-        case "H":
-          setShowControls((s) => !s);
-          break;
-        case "Escape":
-          navigate(-1);
+        case k.toggleControls:
+          setUserHidden((s) => !s);
           break;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, currentPage, pages.length, prevChapter, nextChapter]);
+  }, [
+    mode,
+    fit,
+    rtl,
+    currentPage,
+    pages.length,
+    prevChapter,
+    nextChapter,
+    menu,
+    prefs.keys,
+  ]);
 
-  // ---- Auto-hide controls --------------------------------------------
+  // ---- Window title-bar slot ------------------------------------------
+  // The reader renders its Back button + title INSIDE the app's borderless
+  // window title bar via a portal into #titlebar-slot (see TitleBar.tsx).
+  // The slot sits above the drag region, so the button is clickable there.
+  const [titlebarSlot, setTitlebarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setTitlebarSlot(document.getElementById("titlebar-slot"));
+  }, []);
+
+  // The title bar spans the full window width, but the sidebar (56px) sits
+  // under its left edge — offset the portal content so the Back button
+  // doesn't render on top of the sidebar. Tracks live hide/show toggles.
+  const [sidebarHidden, setSidebarHidden] = useState(
+    () => localStorage.getItem("yuui_sidebar_hidden") === "true",
+  );
+  useEffect(() => {
+    const onSidebar = (e: Event) =>
+      setSidebarHidden((e as CustomEvent).detail?.hidden === true);
+    window.addEventListener("yuui:sidebar", onSidebar);
+    return () => window.removeEventListener("yuui:sidebar", onSidebar);
+  }, []);
+
+  // ---- Auto-hide controls on mouse idle ------------------------------
   useEffect(() => {
     let h: number | null = null;
     const reveal = () => {
-      setShowControls(true);
+      setAutoVisible(true);
       if (h) window.clearTimeout(h);
-      h = window.setTimeout(() => setShowControls(false), 2800);
+      h = window.setTimeout(() => setAutoVisible(false), 2800);
     };
     window.addEventListener("mousemove", reveal);
     return () => {
@@ -345,7 +456,7 @@ export default function ChapterReader() {
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6">
         <p className="text-yuui-muted">Could not load chapter pages.</p>
         <button
-          onClick={() => navigate(-1)}
+          onClick={goBackToManga}
           className="rounded-xl bg-yuui-accent px-4 py-2 text-sm font-semibold text-white"
         >
           Go back
@@ -364,112 +475,146 @@ export default function ChapterReader() {
         ? "max-h-full w-auto mx-auto"
         : "w-auto h-auto max-w-full max-h-full mx-auto";
 
+  // Shared per-image style derived from the display prefs.
+  const imgStyle: React.CSSProperties = {
+    imageRendering: IMAGE_RENDERING[prefs.quality] ?? "auto",
+    filter:
+      prefs.brightness !== 100
+        ? `brightness(${prefs.brightness / 100})`
+        : undefined,
+    // Chromium (WebView2) layout zoom — scales the image while the
+    // overflow-auto container provides panning when it exceeds the view.
+    zoom: prefs.zoom !== 100 ? prefs.zoom / 100 : undefined,
+  };
+
+  const bgClass = BACKGROUND_CLASS[prefs.background] ?? "bg-black";
+  const isLightBg = prefs.background === "white";
+
+  // In RTL, the left click zone / arrow advances, the right goes back.
+  const leftAction = rtl ? goNext : goPrev;
+  const rightAction = rtl ? goPrev : goNext;
+  const leftDisabled = rtl
+    ? currentPage >= pages.length - 1 && !nextChapter
+    : currentPage === 0 && !prevChapter;
+  const rightDisabled = rtl
+    ? currentPage === 0 && !prevChapter
+    : currentPage >= pages.length - 1 && !nextChapter;
+
+  // Pages shown in paged mode (1 or 2 for double-page spreads).
+  const spread = prefs.doublePage
+    ? [pages[currentPage], pages[currentPage + 1]].filter(Boolean)
+    : [pages[currentPage]];
+  // Manga spreads read right-to-left: first page goes on the right.
+  const orderedSpread = rtl ? [...spread].reverse() : spread;
+
   return (
     <div
-      className="flex h-full flex-col bg-black"
+      className={`flex h-full flex-col ${bgClass}`}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
     >
-      {/* Top bar */}
-      <div
-        className={`flex items-center justify-between px-4 py-2 bg-black/80 border-b border-white/[0.06] transition-opacity duration-300 ${
-          showControls ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-      >
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
-        <span className="text-sm text-white/60">
-          Page {displayPage + 1} / {total}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() =>
-              setMangadexReaderMode(mode === "paged" ? "scroll" : "paged")
-            }
-            className="flex items-center gap-1 rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/[0.12]"
-            title="Toggle mode (M)"
+      {/* Back button + title live INSIDE the window title bar (portal into
+          TitleBar's #titlebar-slot, which sits above the drag region — the
+          only way to make them clickable in the top 40px strip). Interactive
+          children opt out of dragging with pointer-events-auto + no-drag. */}
+      {titlebarSlot &&
+        createPortal(
+          <div
+            className={`flex h-full min-w-0 flex-1 items-center gap-3 px-3 transition-opacity duration-300 ${
+              showControls ? "opacity-100" : "opacity-0"
+            }`}
+            style={{ paddingLeft: sidebarHidden ? 12 : 56 + 12 }}
           >
-            {mode === "paged" ? (
-              <>
-                <ChevronDown className="h-3.5 w-3.5" /> Scroll
-              </>
-            ) : (
-              <>
-                <ChevronRight className="h-3.5 w-3.5" /> Paged
-              </>
-            )}
-          </button>
-          <button
-            onClick={() =>
-              setMangadexReaderFit(
-                fit === "width"
-                  ? "height"
-                  : fit === "height"
-                    ? "original"
-                    : "width",
-              )
-            }
-            className="flex items-center gap-1 rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/[0.12]"
-            title="Cycle fit (F)"
-          >
-            {fit === "width" ? (
-              <Maximize2 className="h-3.5 w-3.5" />
-            ) : fit === "height" ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Move className="h-3.5 w-3.5" />
-            )}
-            <span className="capitalize">{fit}</span>
-          </button>
-        </div>
-      </div>
+            {/* Back button — top left, in the title bar */}
+            <button
+              onClick={goBackToManga}
+              data-tauri-drag-region="false"
+              className={`no-drag flex shrink-0 items-center gap-1.5 rounded-lg bg-black/40 px-2.5 py-1 text-sm text-white/70 backdrop-blur transition-colors hover:bg-black/60 hover:text-white ${
+                showControls ? "pointer-events-auto" : "pointer-events-none"
+              }`}
+              title="Back (Esc)"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+
+            {/* Title and chapter — single line (drag-through) */}
+            <h1 className="pointer-events-none min-w-0 flex-1 truncate text-center text-sm font-medium text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+              {mangaDetail?.title ?? "Unknown Manga"}
+              {chapterNumber && (
+                <span className="text-white/60"> · Chapter {chapterNumber}</span>
+              )}
+            </h1>
+
+            {/* Spacer mirrors the back button so the title stays centered */}
+            <span className="invisible flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-sm">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </span>
+          </div>,
+          titlebarSlot,
+        )}
 
       {/* Viewer */}
       {mode === "paged" ? (
-        <div className="flex flex-1 items-center justify-center overflow-hidden relative">
+        <div className="relative flex-1 overflow-auto">
           <button
-            onClick={goPrev}
-            disabled={currentPage === 0 && !prevChapter}
-            className="absolute left-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-start pl-4 transition-opacity opacity-0 hover:opacity-100 disabled:opacity-0"
+            onClick={leftAction}
+            disabled={leftDisabled}
+            className="fixed left-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-start pl-4 transition-opacity opacity-0 hover:opacity-100 disabled:opacity-0"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur">
               <ChevronLeft className="h-6 w-6 text-white" />
             </div>
           </button>
 
-          {/* Preload adjacent pages (pivot ± 1). */}
+          {/* Preload adjacent pages (pivot ± step). */}
           {pages[currentPage - 1] && (
             <link rel="preload" href={pages[currentPage - 1].url} as="image" />
           )}
-          {pages[currentPage + 1] && (
-            <link rel="preload" href={pages[currentPage + 1].url} as="image" />
+          {pages[currentPage + step] && (
+            <link
+              rel="preload"
+              href={pages[currentPage + step].url}
+              as="image"
+            />
+          )}
+          {prefs.doublePage && pages[currentPage + step + 1] && (
+            <link
+              rel="preload"
+              href={pages[currentPage + step + 1].url}
+              as="image"
+            />
           )}
           <motion.div
             key={currentPage}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
-            className="flex h-full w-full items-center justify-center p-2"
+            className="flex h-full min-h-full w-full items-center justify-center gap-1 p-2"
           >
-            <img
-              src={pages[currentPage].url}
-              alt={`Page ${currentPage + 1}`}
-              className={`${fitClass} object-contain select-none`}
-              draggable={false}
-            />
+            {orderedSpread.map((p, i) => (
+              <img
+                key={p.filename}
+                src={p.url}
+                alt={`Page ${currentPage + 1 + i}`}
+                className={`${
+                  prefs.doublePage
+                    ? "max-h-full w-auto max-w-[50%] object-contain"
+                    : `${fitClass} object-contain`
+                } select-none`}
+                style={imgStyle}
+                draggable={false}
+              />
+            ))}
           </motion.div>
 
           <button
-            onClick={goNext}
-            disabled={currentPage >= pages.length - 1 && !nextChapter}
-            className="absolute right-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-end pr-4 transition-opacity opacity-0 hover:opacity-100 disabled:opacity-0"
+            onClick={rightAction}
+            disabled={rightDisabled}
+            className="fixed right-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-end pr-4 transition-opacity opacity-0 hover:opacity-100 disabled:opacity-0"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur">
               <ChevronRight className="h-6 w-6 text-white" />
@@ -480,6 +625,7 @@ export default function ChapterReader() {
         <div
           ref={scrollRef}
           className="flex flex-1 flex-col items-center overflow-y-auto px-2 py-4"
+          style={{ rowGap: prefs.pageGap }}
         >
           {pages.map((p, i) => (
             <img
@@ -495,6 +641,7 @@ export default function ChapterReader() {
                     ? "max-h-[88vh] w-auto mx-auto"
                     : "w-full max-w-full"
               }`}
+              style={imgStyle}
               draggable={false}
             />
           ))}
@@ -510,89 +657,44 @@ export default function ChapterReader() {
         </div>
       )}
 
-      {/* Seek bar (paged mode only) */}
-      {mode === "paged" && (
-        <div
-          className={`px-4 py-2 bg-black/80 border-t border-white/[0.06] transition-opacity duration-300 ${
-            showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+      {/* Page number — bottom right corner */}
+      <div
+        className={`fixed bottom-4 right-4 z-20 transition-opacity duration-300 ${
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <span
+          className={`glass rounded-lg px-3 py-1.5 text-xs font-medium ${
+            isLightBg ? "bg-black/60 text-white" : "text-white/80"
           }`}
         >
-          <div className="flex items-center gap-3">
-            <button
-              onClick={goPrev}
-              disabled={currentPage === 0 && !prevChapter}
-              className="text-white/70 hover:text-white disabled:opacity-30"
-              title="Previous (←)"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={total - 1}
-              value={currentPage}
-              onChange={(e) => jumpTo(Number(e.target.value))}
-              className="flex-1 accent-yuui-accent"
-            />
-            <button
-              onClick={goNext}
-              disabled={currentPage >= total - 1 && !nextChapter}
-              className="text-white/70 hover:text-white disabled:opacity-30"
-              title="Next (→)"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <span className="text-[11px] text-white/60 tabular-nums w-16 text-right">
-              {displayPage + 1} / {total}
-            </span>
-          </div>
-          {(prevChapter || nextChapter) && (
-            <div className="mt-1 flex justify-between text-[10px] text-yuui-muted">
-              {prevChapter ? (
-                <button
-                  onClick={() => navigate(`/mangadex/reader/${prevChapter.id}`)}
-                  className="hover:text-white/80"
-                >
-                  ← Prev Ch. {prevChapter.chapter ?? "?"}
-                </button>
-              ) : (
-                <span />
-              )}
-              {nextChapter ? (
-                <button
-                  onClick={() => navigate(`/mangadex/reader/${nextChapter.id}`)}
-                  className="hover:text-white/80"
-                >
-                  Next Ch. {nextChapter.chapter ?? "?"} →
-                </button>
-              ) : (
-                <span />
-              )}
-            </div>
-          )}
-        </div>
-      )}
+          {displayPage + 1}
+          {prefs.doublePage &&
+            mode === "paged" &&
+            currentPage + 1 < total &&
+            `-${displayPage + 2}`}{" "}
+          / {total}
+        </span>
+      </div>
 
-      {/* Right-click context menu */}
+      {/* Right-click settings menu */}
       {menu && (
         <ReaderContextMenu
           x={menu.x}
           y={menu.y}
           mode={mode}
           fit={fit}
-          showControls={showControls}
+          prefs={prefs}
+          showControls={!userHidden}
           currentPage={displayPage}
           totalPages={total}
           hasPrevChapter={!!prevChapter}
           hasNextChapter={!!nextChapter}
           onClose={() => setMenu(null)}
-          onSetMode={(m) => {
-            setMangadexReaderMode(m);
-          }}
-          onSetFit={(f) => {
-            setMangadexReaderFit(f);
-          }}
-          onToggleControls={() => setShowControls((s) => !s)}
+          onSetMode={(m) => setMangadexReaderMode(m)}
+          onSetFit={(f) => setMangadexReaderFit(f)}
+          onPatchPrefs={(patch) => setMangadexReaderPrefs(patch)}
+          onToggleControls={() => setUserHidden((s) => !s)}
           onPrevPage={goPrev}
           onNextPage={goNext}
           onJumpTo={jumpTo}
@@ -602,7 +704,7 @@ export default function ChapterReader() {
           onNextChapter={() => {
             if (nextChapter) navigate(`/mangadex/reader/${nextChapter.id}`);
           }}
-          onBack={() => navigate(-1)}
+          onBack={goBackToManga}
         />
       )}
     </div>

@@ -130,6 +130,41 @@ export interface EntrySlice {
 
 export type MangadexReaderMode = "paged" | "scroll";
 export type MangadexReaderFit = "width" | "height" | "original";
+/** Resize (scaling) algorithm applied to page images.
+ *  best = browser smooth scaling, medium = crisp-edges, fast = nearest-neighbor. */
+export type MangadexReaderQuality = "best" | "medium" | "fast";
+export type MangadexReaderDirection = "ltr" | "rtl";
+export type MangadexReaderBackground = "black" | "gray" | "white";
+/** Source image quality from the at-home CDN. */
+export type MangadexImageQuality = "data" | "data-saver";
+
+/** Rebindable reader actions. Values are `KeyboardEvent.key` names,
+ *  lowercased for letters (e.g. "m", "arrowleft", "pageup"). */
+export type MangadexReaderAction =
+  | "prevPage"
+  | "nextPage"
+  | "scrollUp"
+  | "scrollDown"
+  | "toggleMode"
+  | "cycleFit"
+  | "prevChapter"
+  | "nextChapter"
+  | "toggleControls";
+
+/** Extended reader preferences persisted as one JSON blob. */
+export interface MangadexReaderPrefs {
+  direction: MangadexReaderDirection; // page-turn direction (manga = rtl)
+  quality: MangadexReaderQuality; // resize algorithm
+  imageQuality: MangadexImageQuality; // CDN source quality
+  background: MangadexReaderBackground;
+  pageGap: number; // px between pages in scroll mode
+  zoom: number; // percent, 100 = fit
+  brightness: number; // percent, 100 = normal
+  doublePage: boolean; // two-page spread in paged mode
+  menuAutoHideMs: number; // context-menu auto-hide delay
+  menuPinned: boolean; // pinned = docked right-side panel, never auto-hides
+  keys: Record<MangadexReaderAction, string>; // editable keybindings
+}
 
 export interface MangadexSlice {
   mangadexEnabled: boolean;
@@ -139,6 +174,7 @@ export interface MangadexSlice {
   mangadexOriginalLanguageFilter: string | null; // default null (any)
   mangadexReaderMode: MangadexReaderMode; // default "paged"
   mangadexReaderFit: MangadexReaderFit; // default "width"
+  mangadexReaderPrefs: MangadexReaderPrefs;
 
   setMangadexEnabled: (enabled: boolean) => Promise<void>;
   setMangadexContentRating: (ratings: string[]) => Promise<void>;
@@ -146,6 +182,8 @@ export interface MangadexSlice {
   setMangadexOriginalLanguageFilter: (lang: string | null) => Promise<void>;
   setMangadexReaderMode: (mode: MangadexReaderMode) => Promise<void>;
   setMangadexReaderFit: (fit: MangadexReaderFit) => Promise<void>;
+  /** Merge a partial prefs patch and persist the full blob. */
+  setMangadexReaderPrefs: (patch: Partial<MangadexReaderPrefs>) => Promise<void>;
 }
 
 export interface LibraryState

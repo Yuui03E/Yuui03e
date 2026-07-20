@@ -17,8 +17,16 @@ export default function TitleBar() {
         className="drag-region absolute inset-0 z-0 h-full w-full pointer-events-auto"
       />
 
-      {/* Spacer to push controls to the right */}
-      <div className="flex-1" />
+      {/* Page slot: routed pages portal contextual content here (e.g. the
+          manga reader's Back button + title) so it renders INSIDE the window
+          title bar, above the drag region — same layering trick as the
+          window controls. The slot itself stays pointer-events-none so empty
+          space still drags; interactive children opt back in with
+          pointer-events-auto + no-drag. */}
+      <div
+        id="titlebar-slot"
+        className="relative z-10 flex h-full min-w-0 flex-1 items-center pointer-events-none"
+      />
 
       {/* Control Buttons */}
       <div className="relative z-10 flex h-full items-center pointer-events-auto">

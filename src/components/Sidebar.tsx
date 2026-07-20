@@ -83,6 +83,10 @@ export default function Sidebar() {
   const setSidebarHidden = (v: boolean) => {
     setHidden(v);
     localStorage.setItem("yuui_sidebar_hidden", String(v));
+    // Let listeners (e.g. the reader's title-bar portal) react to the change.
+    window.dispatchEvent(
+      new CustomEvent("yuui:sidebar", { detail: { hidden: v } }),
+    );
   };
 
   return (

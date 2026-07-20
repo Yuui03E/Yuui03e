@@ -513,9 +513,11 @@ export async function getChapters(
   }));
 }
 
-/** Get page URLs for a chapter (at-home CDN). */
+/** Get page URLs for a chapter (at-home CDN).
+ *  `quality`: "data" = full quality, "data-saver" = compressed images. */
 export async function getChapterPages(
   chapterId: string,
+  quality: "data" | "data-saver" = "data",
 ): Promise<MangaDexPage[]> {
   const json = await mdGet(
     `https://api.mangadex.org/at-home/server/${chapterId}`,
@@ -526,8 +528,11 @@ export async function getChapterPages(
     data: string[];
     dataSaver: string[];
   };
-  return chapter.data.map((filename: string) => ({
-    url: `${baseUrl}/data/${chapter.hash}/${filename}`,
+  const useSaver = quality === "data-saver" && chapter.dataSaver?.length > 0;
+  const files = useSaver ? chapter.dataSaver : chapter.data;
+  const seg = useSaver ? "data-saver" : "data";
+  return files.map((filename: string) => ({
+    url: `${baseUrl}/${seg}/${chapter.hash}/${filename}`,
     filename,
   }));
 }

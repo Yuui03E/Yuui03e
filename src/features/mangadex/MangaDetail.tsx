@@ -4,7 +4,6 @@ import {
   BookOpen,
   Calendar,
   Clock,
-  Heart,
   PlayCircle,
   Globe,
   ArrowUp,
@@ -12,7 +11,6 @@ import {
 } from "lucide-react";
 import { getMangaDetail, getChapters, getReadingProgress, getChapterPages } from "./api";
 import type { MangaInfo, ChapterInfo, ProgressRow } from "./api";
-import { useFavorite } from "./hooks";
 
 declare global {
   interface Window {
@@ -44,7 +42,6 @@ export default function MangaDetail() {
   const [chapters, setChapters] = useState<ChapterInfo[]>([]);
   const [progress, setProgress] = useState<ProgressRow | null>(null);
   const [loading, setLoading] = useState(true);
-  const { fav, toggle } = useFavorite(id);
 
   // Chapter sort: "asc" or "desc"
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -171,8 +168,6 @@ export default function MangaDetail() {
         }) ?? ascending[0];
     }
   }
-
-  const onFavoriteClick = () => toggle(manga);
 
   const getLanguageName = (code: string) => {
     const langMap: Record<string, string> = {
@@ -360,17 +355,6 @@ export default function MangaDetail() {
               </span>
             </div>
           </div>
-          <button
-            onClick={onFavoriteClick}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-black/55 backdrop-blur px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-black/75 active:scale-[0.97]"
-          >
-            <Heart
-              className={`h-4 w-4 transition-colors ${
-                fav ? "fill-rose-500 text-rose-500" : "text-white/80"
-              }`}
-            />
-            {fav ? "Favorited" : "Favorite"}
-          </button>
         </div>
       </div>
 
