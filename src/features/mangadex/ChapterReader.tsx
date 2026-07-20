@@ -10,7 +10,7 @@ import {
   Minimize2,
   Move,
 } from "lucide-react";
-import { getChapterPages, getChapters, saveReadingProgress } from "./api";
+import { getChapterPages, getChapters, getMangaDetail, saveReadingProgress } from "./api";
 import type { ChapterInfo } from "./api";
 import type { MangaDexPage } from "./types";
 import { useLibrary } from "../../store/library";
@@ -23,7 +23,11 @@ type FitMode = "width" | "height" | "original";
  *  Set by MangaDetail just before navigating to the reader. */
 declare global {
   interface Window {
-    __mdNav?: { mangaId?: string };
+    __mdNav?: { 
+      mangaId?: string;
+      title?: string;
+      coverUrl?: string;
+    };
   }
 }
 
@@ -75,6 +79,30 @@ export default function ChapterReader() {
   // Right-click context menu position (null = closed).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { mangaId, allChapters } = useMangaIdForChapter(chapterId);
+  const [mangaDetail, setMangaDetail] = useState<{ title?: string; coverUrl?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!mangaId) return;
+    let alive = true;
+    const cachedTitle = window.__mdNav?.title;
+    const cachedCover = window.__mdNav?.coverUrl;
+    if (cachedTitle && cachedCover) {
+      setMangaDetail({ title: cachedTitle, coverUrl: cachedCover });
+      return;
+    }
+
+    getMangaDetail(mangaId)
+      .then((detail) => {
+        if (alive && detail) {
+          setMangaDetail({ title: detail.title, coverUrl: detail.coverUrl });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [mangaId]);
 
   const mode: ReaderMode = mangadexReaderMode;
   const fit: FitMode = mangadexReaderFit;
@@ -91,7 +119,6 @@ export default function ChapterReader() {
       return an - bn;
     });
     const idx = asc.findIndex((c) => c.id === chapterId);
-    if (idx < 0) return { prevChapter: undefined, nextChapter: undefined };
     return {
       prevChapter: idx > 0 ? asc[idx - 1] : undefined,
       nextChapter: idx < asc.length - 1 ? asc[idx + 1] : undefined,
@@ -105,27 +132,78 @@ export default function ChapterReader() {
     getChapterPages(chapterId)
       .then((p) => {
         setPages(p);
-        setCurrentPage(0);
-        scrollRef.current?.scrollTo({ top: 0 });
+        
+        let initialPage = 0;
+        const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
+        if (cached) {
+          const parts = cached.split("/");
+          if (parts.length > 0) {
+            const pageNum = parseInt(parts[0], 10);
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum <= p.length) {
+              initialPage = pageNum - 1;
+            }
+          }
+        }
+        setCurrentPage(initialPage);
+        setScrollPage(initialPage);
+
+        if (mangaId) {
+          const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
+          const frac = p.length > 0 ? (initialPage + 1) / p.length : 0;
+          saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail?.title, mangaDetail?.coverUrl).catch(() => {});
+        }
       })
       .catch(() => setPages([]))
       .finally(() => setLoading(false));
-
-    if (mangaId) {
-      const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
-      saveReadingProgress(chapterId, mangaId, cn, 0).catch(() => {});
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterId]);
+  }, [chapterId, mangaId, mangaDetail]);
+
+  // Scroll initial page into view in scroll mode
+  useEffect(() => {
+    if (!loading && mode === "scroll" && currentPage > 0 && scrollRef.current) {
+      const targetImg = scrollRef.current.querySelector(`[data-page-idx="${currentPage}"]`);
+      if (targetImg) {
+        setTimeout(() => {
+          targetImg.scrollIntoView({ block: "start" });
+        }, 120);
+      }
+    }
+  }, [loading, mode, currentPage]);
+
+  // Sync title and cover to DB as soon as details are loaded/resolved
+  useEffect(() => {
+    if (mangaId && mangaDetail && allChapters.length > 0) {
+      const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
+      let initialPage = 0;
+      const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
+      if (cached) {
+        const parts = cached.split("/");
+        if (parts.length > 0) {
+          const pageNum = parseInt(parts[0], 10);
+          if (!isNaN(pageNum) && pageNum > 0 && pageNum <= pages.length) {
+            initialPage = pageNum - 1;
+          }
+        }
+      }
+      const frac = pages.length > 0 ? (initialPage + 1) / pages.length : 0;
+      saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail.title, mangaDetail.coverUrl).catch(() => {});
+    }
+  }, [mangaId, mangaDetail, allChapters, chapterId, pages.length]);
 
   // ---- Debounced progress writes -------------------------------------
   const saveTimer = useRef<number | null>(null);
-  const persistProgress = (frac: number) => {
+  const persistProgress = (frac: number, pageIndex: number) => {
     if (!chapterId || !mangaId) return;
     const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
+    
+    // Save current page info in localStorage for history view
+    if (pages.length > 0) {
+      localStorage.setItem(`yuui_md_page_${chapterId}`, `${pageIndex + 1}/${pages.length}`);
+    }
+
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      saveReadingProgress(chapterId, mangaId, cn, frac).catch(() => {});
+      saveReadingProgress(chapterId!, mangaId, cn, frac, mangaDetail?.title, mangaDetail?.coverUrl).catch(() => {});
     }, 400);
   };
 
@@ -134,7 +212,7 @@ export default function ChapterReader() {
     if (currentPage < pages.length - 1) {
       const np = currentPage + 1;
       setCurrentPage(np);
-      persistProgress((np + 1) / pages.length);
+      persistProgress((np + 1) / pages.length, np);
     } else if (nextChapter) {
       navigate(`/mangadex/reader/${nextChapter.id}`);
     }
@@ -144,7 +222,7 @@ export default function ChapterReader() {
     if (currentPage > 0) {
       const np = currentPage - 1;
       setCurrentPage(np);
-      persistProgress((np + 1) / pages.length);
+      persistProgress((np + 1) / pages.length, np);
     } else if (prevChapter) {
       navigate(`/mangadex/reader/${prevChapter.id}`);
     }
@@ -153,7 +231,7 @@ export default function ChapterReader() {
   const jumpTo = (page: number) => {
     const np = Math.max(0, Math.min(pages.length - 1, page));
     setCurrentPage(np);
-    persistProgress((np + 1) / pages.length);
+    persistProgress((np + 1) / pages.length, np);
   };
 
   // ---- Scroll mode: IntersectionObserver to track current page -------
@@ -173,7 +251,7 @@ export default function ChapterReader() {
             const idx = Number((e.target as HTMLElement).dataset.pageIdx);
             if (!isNaN(idx)) {
               setScrollPage(idx);
-              persistProgress((idx + 1) / pages.length);
+              persistProgress((idx + 1) / pages.length, idx);
             }
           }
         }

@@ -31,26 +31,26 @@ export default function TagFilterPanel({
 
   return (
     <motion.div
-      initial={{ x: 320, opacity: 0 }}
+      initial={{ x: 20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 320, opacity: 0 }}
-      className="fixed right-0 top-0 bottom-0 z-30 w-80 max-w-[90vw] overflow-y-auto border-l border-white/[0.08] bg-yuui-surface/95 p-5 backdrop-blur-xl"
+      exit={{ x: 20, opacity: 0 }}
+      className="w-64 shrink-0 overflow-y-auto border border-border bg-surface-elevated/10 rounded-2xl p-4 backdrop-blur-md sticky top-6 max-h-[calc(100vh-220px)] scrollbar-thin select-none"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-white/90">
-          <Sliders className="h-4 w-4" /> Tag Filters
+      <div className="flex items-center justify-between border-b border-border pb-2.5">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-white/90 uppercase tracking-wider">
+          <Sliders className="h-3.5 w-3.5 text-accent" /> Filters
         </h3>
         <button
           onClick={onClose}
-          className="rounded-lg p-1 text-yuui-muted hover:bg-white/[0.06] hover:text-white"
+          className="rounded-lg p-1 text-muted-foreground hover:bg-white/[0.06] hover:text-white cursor-pointer"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
       {selected.length > 0 && (
         <button
           onClick={onClear}
-          className="mt-2 text-[11px] text-yuui-accent hover:underline"
+          className="mt-2 text-[10px] text-accent hover:underline cursor-pointer font-semibold uppercase tracking-wider"
         >
           Clear {selected.length} filter{selected.length > 1 ? "s" : ""}
         </button>
@@ -58,7 +58,7 @@ export default function TagFilterPanel({
       <div className="mt-4 space-y-5">
         {groups.map(([group, list]) => (
           <div key={group}>
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-yuui-muted">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               {group}
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -68,10 +68,10 @@ export default function TagFilterPanel({
                   <button
                     key={t.id}
                     onClick={() => onToggle(t.id)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] transition-all ${
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer ${
                       active
-                        ? "bg-yuui-accent text-white"
-                        : "bg-white/[0.06] text-yuui-muted hover:bg-white/[0.12]"
+                        ? "bg-accent text-white"
+                        : "bg-white/[0.04] border border-white/[0.06] text-muted-foreground hover:bg-white/[0.1] hover:text-white"
                     }`}
                   >
                     {t.name}

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getPopularNewTitles,
   getTopRatedManga,
   getRecentlyAddedManga,
   getLatestChapterUpdates,
+  getRecommendedManga,
   browseManga,
   getCustomListMangaIds,
   getSeasonalKey,
@@ -34,6 +35,8 @@ interface UseMangadexFeedArgs {
   originalLanguageFilter: string | null;
   /** When true (search/tags active) the feed switches to browse/search mode. */
   browseMode: boolean;
+  seasonalSeason?: string;
+  seasonalYear?: number;
 }
 
 /**
@@ -58,6 +61,8 @@ export function useMangadexFeed({
   translatedLanguage,
   originalLanguageFilter,
   browseMode,
+  seasonalSeason,
+  seasonalYear,
 }: UseMangadexFeedArgs): FeedState {
   const [items, setItems] = useState<(MangaInfo | ChapterUpdateInfo)[]>([]);
   const [offset, setOffset] = useState(0);
@@ -70,7 +75,9 @@ export function useMangadexFeed({
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
-  const { season: seasonName, year: seasonYear } = getSeasonalKey(new Date());
+  const defaultSeason = useMemo(() => getSeasonalKey(new Date()), []);
+  const seasonName = seasonalSeason ?? defaultSeason.season;
+  const seasonYear = seasonalYear ?? defaultSeason.year;
 
   // Refs holding the latest values so the fetch callback can stay stable.
   const stateRef = useRef({
@@ -81,6 +88,8 @@ export function useMangadexFeed({
     contentRating,
     translatedLanguage,
     originalLanguageFilter,
+    seasonName,
+    seasonYear,
     fetching: false,
     hasMore: true,
     offset: 0,
@@ -95,6 +104,8 @@ export function useMangadexFeed({
     contentRating,
     translatedLanguage,
     originalLanguageFilter,
+    seasonName,
+    seasonYear,
     // these two are updated below whenever the setters fire
     fetching: stateRef.current.fetching,
     hasMore: stateRef.current.hasMore,
@@ -152,8 +163,10 @@ export function useMangadexFeed({
           newItems = await getLatestChapterUpdates(LIMIT, filters);
         } else if (curTab === "recent") {
           newItems = await getRecentlyAddedManga(LIMIT, filters);
+        } else if (curTab === "recommended") {
+          newItems = await getRecommendedManga(LIMIT, filters);
         } else if (curTab === "seasonal") {
-          const listId = getSeasonalListId(seasonName, seasonYear);
+          const listId = getSeasonalListId(s.seasonName, s.seasonYear);
           const mangaIds = listId ? await getCustomListMangaIds(listId) : [];
 
           if (mangaIds.length > 0) {
@@ -180,7 +193,7 @@ export function useMangadexFeed({
                 originalLanguage: origLangFilter,
                 limit: LIMIT,
                 offset: offsetVal,
-                year: seasonYear,
+                year: s.seasonYear,
                 order: { followedCount: "desc" },
               });
               if (list.length === 0) {
@@ -190,7 +203,7 @@ export function useMangadexFeed({
                   originalLanguage: origLangFilter,
                   limit: LIMIT,
                   offset: offsetVal,
-                  year: Math.min(seasonYear - 1, 2025),
+                  year: Math.min(s.seasonYear - 1, 2025),
                   order: { followedCount: "desc" },
                 });
               }
@@ -207,7 +220,7 @@ export function useMangadexFeed({
               originalLanguage: origLangFilter,
               limit: LIMIT,
               offset: offsetVal,
-              year: seasonYear,
+              year: s.seasonYear,
               order: { followedCount: "desc" },
             });
 
@@ -218,7 +231,7 @@ export function useMangadexFeed({
                 originalLanguage: origLangFilter,
                 limit: LIMIT,
                 offset: offsetVal,
-                year: Math.min(seasonYear - 1, 2025),
+                year: Math.min(s.seasonYear - 1, 2025),
                 order: { followedCount: "desc" },
               });
             }
@@ -277,6 +290,7 @@ export function useMangadexFeed({
       "top",
       "recent",
       "seasonal",
+      "recommended",
     ].includes(tab);
 
     if (isFeedTab || browseMode) {
@@ -296,6 +310,8 @@ export function useMangadexFeed({
     contentKey,
     translatedLanguage,
     originalLanguageFilter,
+    seasonalSeason,
+    seasonalYear,
     reloadToken,
     fetchPage,
   ]);

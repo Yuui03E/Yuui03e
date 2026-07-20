@@ -7,21 +7,33 @@ import {
   Heart,
   PlayCircle,
   Globe,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
-import { getMangaDetail, getChapters, getReadingProgress } from "./api";
+import { getMangaDetail, getChapters, getReadingProgress, getChapterPages } from "./api";
 import type { MangaInfo, ChapterInfo, ProgressRow } from "./api";
 import { useFavorite } from "./hooks";
 
 declare global {
   interface Window {
-    __mdNav?: { mangaId?: string };
+    __mdNav?: { 
+      mangaId?: string;
+      title?: string;
+      coverUrl?: string;
+    };
   }
 }
 
-/** Stash the current mangaId before navigating to the reader so the reader
- *  can locate sibling chapters. */
-function goReader(navigate: (to: string) => void, mangaId: string, ch: string) {
-  window.__mdNav = { mangaId };
+/** Stash the current mangaId, title, and coverUrl before navigating to the reader so the reader
+ *  can locate sibling chapters and save history. */
+function goReader(
+  navigate: (to: string) => void,
+  mangaId: string,
+  ch: string,
+  title?: string,
+  coverUrl?: string,
+) {
+  window.__mdNav = { mangaId, title, coverUrl };
   navigate(`/mangadex/reader/${ch}`);
 }
 
@@ -34,15 +46,19 @@ export default function MangaDetail() {
   const [loading, setLoading] = useState(true);
   const { fav, toggle } = useFavorite(id);
 
+  // Chapter sort: "asc" or "desc"
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  // Banner images fetched from first chapter pages
+  const [bannerUrls, setBannerUrls] = useState<string[]>([]);
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     setManga(null);
     setChapters([]);
     setProgress(null);
-    // Fetch detail, chapters, and progress independently so a failure in
-    // one (e.g. an empty chapter feed returning an error) doesn't wipe out
-    // the others and leave the user staring at a "not found" screen.
+    setBannerUrls([]);
     let alive = true;
     Promise.all([
       getMangaDetail(id).catch(() => null),
@@ -54,6 +70,27 @@ export default function MangaDetail() {
         setManga(m);
         setChapters(c);
         setProgress(p);
+
+        // Fetch banner images from first chapter
+        if (c && c.length > 0) {
+          const sorted = [...c].sort((a, b) => {
+            const an = parseFloat(a.chapter ?? "");
+            const bn = parseFloat(b.chapter ?? "");
+            if (isNaN(an)) return 1;
+            if (isNaN(bn)) return -1;
+            return an - bn;
+          });
+          const firstChapter = sorted[0];
+          if (firstChapter) {
+            getChapterPages(firstChapter.id)
+              .then((pages) => {
+                if (!alive) return;
+                // Take up to 5 landscape-ish pages for the banner
+                setBannerUrls(pages.slice(0, 5).map((p) => p.url));
+              })
+              .catch(() => {});
+          }
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -96,12 +133,24 @@ export default function MangaDetail() {
     );
   }
 
-  const statusColors: Record<string, string> = {
-    ongoing: "text-green-400",
-    completed: "text-blue-400",
-    cancelled: "text-red-400",
-    hiatus: "text-yellow-400",
+  // Status → color: "ongoing" uses the software accent color
+  const statusColorClass = (status: string) => {
+    switch (status) {
+      case "ongoing": return "text-accent";
+      case "completed": return "text-blue-400";
+      case "cancelled": return "text-red-400";
+      case "hiatus": return "text-yellow-400";
+      default: return "text-white/95";
+    }
   };
+
+  const sortedChapters = [...chapters].sort((a, b) => {
+    const an = parseFloat(a.chapter ?? "");
+    const bn = parseFloat(b.chapter ?? "");
+    if (isNaN(an)) return 1;
+    if (isNaN(bn)) return -1;
+    return sortOrder === "asc" ? an - bn : bn - an;
+  });
 
   const ascending = [...chapters].sort((a, b) => {
     const an = parseFloat(a.chapter ?? "");
@@ -198,18 +247,51 @@ export default function MangaDetail() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Cover banner */}
-      <div className="relative flex-shrink-0 h-[300px] w-full overflow-hidden bg-white/5">
-        {manga.coverUrl ? (
+      {/* ===== BANNER ===== */}
+      <div className="relative flex-shrink-0 h-[280px] w-full overflow-hidden bg-[#0a0a10]">
+        {bannerUrls.length > 0 ? (
+          /* Stitch chapter pages side-by-side as a cinematic banner */
+          <div className="absolute inset-0 flex w-full h-full">
+            {bannerUrls.map((url, i) => (
+              <div
+                key={i}
+                className="flex-1 h-full overflow-hidden"
+                style={{ minWidth: 0 }}
+              >
+                <img
+                  src={url}
+                  alt=""
+                  className="h-full w-full object-cover object-top"
+                  draggable={false}
+                />
+              </div>
+            ))}
+            {/* fade strips between panels */}
+            {bannerUrls.slice(0, -1).map((_, i) => (
+              <div
+                key={`sep-${i}`}
+                className="absolute top-0 bottom-0 w-px bg-black/60"
+                style={{ left: `${((i + 1) / bannerUrls.length) * 100}%` }}
+              />
+            ))}
+          </div>
+        ) : manga.coverUrl ? (
+          /* Fallback: blurred cover */
           <img
             src={manga.coverUrl}
             alt=""
-            className="h-full w-full object-cover blur-xl opacity-40 scale-105"
+            className="h-full w-full object-cover blur-2xl opacity-35 scale-110"
           />
         ) : (
-          <div className="h-full w-full bg-gradient-to-br from-yuui-accent/20 to-[#0f0f16]" />
+          <div className="h-full w-full bg-gradient-to-br from-accent/20 to-[#0f0f16]" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-yuui-bg via-yuui-bg/40 to-transparent" />
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-yuui-bg via-yuui-bg/50 to-black/30 pointer-events-none" />
+        {/* Side vignettes */}
+        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-yuui-bg to-transparent pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-yuui-bg to-transparent pointer-events-none" />
+
         <button
           onClick={() => navigate("/mangadex")}
           className="glass absolute left-6 top-6 z-10 rounded-xl px-3 py-1.5 text-sm hover:bg-white/[0.1] cursor-pointer active:scale-95 transition-all text-white"
@@ -218,10 +300,11 @@ export default function MangaDetail() {
         </button>
       </div>
 
-      {/* Cover + info overlay */}
-      <div className="relative z-10 -mt-32 px-6 flex-shrink-0">
+      {/* ===== POSTER + INFO OVERLAY ===== */}
+      <div className="relative z-10 -mt-40 px-6 flex-shrink-0">
         <div className="flex flex-col md:flex-row items-end gap-6">
-          <div className="w-[180px] shrink-0 overflow-hidden rounded-2xl border border-white/10 shadow-card bg-white/5">
+          {/* Larger poster */}
+          <div className="w-[220px] shrink-0 overflow-hidden rounded-2xl border border-white/10 shadow-card bg-white/5 shadow-2xl ring-1 ring-white/5">
             {manga.coverUrl ? (
               <img
                 src={manga.coverUrl}
@@ -258,9 +341,9 @@ export default function MangaDetail() {
                 </span>
               )}
               <span
-                className={`glass rounded-full px-3 py-1 flex items-center gap-1.5 capitalize font-medium ${statusColors[manga.status] || "text-white/95"}`}
+                className={`glass rounded-full px-3 py-1 flex items-center gap-1.5 capitalize font-medium ${statusColorClass(manga.status)}`}
               >
-                <Clock className="h-3.5 w-3.5 text-yuui-muted" />
+                <Clock className="h-3.5 w-3.5 opacity-60" />
                 {manga.status}
               </span>
               <span className="glass rounded-full px-3 py-1 flex items-center gap-1.5 text-white/95">
@@ -291,7 +374,7 @@ export default function MangaDetail() {
         </div>
       </div>
 
-      {/* Main split grid */}
+      {/* ===== MAIN GRID ===== */}
       <div className="px-6 py-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Left column info panel */}
         <div className="lg:col-span-1 space-y-6">
@@ -331,18 +414,26 @@ export default function MangaDetail() {
           {/* Tags */}
           {manga.tags.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-yuui-muted">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-yuui-muted font-display font-semibold">
                 Tags
               </h3>
               <div className="flex flex-wrap gap-1.5">
-                {manga.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-white/[0.04] border border-white/[0.06] px-2.5 py-1 text-[11px] text-yuui-muted font-medium"
-                  >
-                    {tag}
-                  </span>
-                ))}
+                {manga.tags.map((tag, tagIdx) => {
+                  const tagId = manga.tagIds?.[tagIdx];
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => {
+                        if (tagId) {
+                          navigate(`/mangadex?tag=${tagId}`);
+                        }
+                      }}
+                      className="rounded-full bg-white/[0.04] border border-white/[0.06] px-2.5 py-1 text-[11px] text-yuui-muted font-medium transition-all duration-200 cursor-pointer hover:bg-accent/15 hover:text-accent hover:border-accent/25 hover:scale-[1.04] active:scale-95"
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -353,10 +444,10 @@ export default function MangaDetail() {
           {/* Continue reading banner */}
           {progress && continueChapter && (
             <button
-              onClick={() => goReader(navigate, manga.id, continueChapter!.id)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-yuui-accent/30 bg-yuui-accent/10 px-4 py-3 text-left transition-colors hover:bg-yuui-accent/20"
+              onClick={() => goReader(navigate, manga.id, continueChapter!.id, manga.title, manga.coverUrl ?? undefined)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-left transition-colors hover:bg-accent/20"
             >
-              <PlayCircle className="h-6 w-6 text-yuui-accent" />
+              <PlayCircle className="h-6 w-6 text-accent" />
               <div className="flex-1">
                 <span className="block text-sm font-semibold text-white/90">
                   {progress.progress >= 0.95
@@ -388,26 +479,41 @@ export default function MangaDetail() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-yuui-muted">
                 Chapters
               </h3>
-              <span className="text-xs text-yuui-muted">
-                {chapters.length} total
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-yuui-muted">
+                  {chapters.length} total
+                </span>
+                {/* Sort toggle */}
+                <button
+                  onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold border border-white/[0.06] bg-white/[0.02] hover:bg-accent/10 hover:text-accent hover:border-accent/20 transition-all text-white/70"
+                  title="Toggle sort order"
+                >
+                  {sortOrder === "asc" ? (
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  )}
+                  {sortOrder === "asc" ? "Oldest first" : "Newest first"}
+                </button>
+              </div>
             </div>
-            {chapters.length === 0 ? (
+            {sortedChapters.length === 0 ? (
               <p className="text-sm text-yuui-muted py-6 text-center bg-white/[0.02] border border-white/[0.04] rounded-2xl">
                 No chapters available.
               </p>
             ) : (
               <div className="space-y-1">
-                {chapters.map((ch) => {
+                {sortedChapters.map((ch) => {
                   const isLastRead =
                     progress?.chapter_id && progress.chapter_id === ch.id;
                   return (
                     <button
                       key={ch.id}
-                      onClick={() => goReader(navigate, manga.id, ch.id)}
+                      onClick={() => goReader(navigate, manga.id, ch.id, manga.title, manga.coverUrl ?? undefined)}
                       className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-colors border border-transparent hover:bg-white/[0.04] active:bg-white/[0.06] ${
                         isLastRead
-                          ? "bg-yuui-accent/10 border-yuui-accent/20"
+                          ? "bg-accent/10 border-accent/20"
                           : "bg-white/[0.02] border-white/[0.04]"
                       }`}
                     >
@@ -427,7 +533,7 @@ export default function MangaDetail() {
                             <span className="opacity-40">•</span>
                           )}
                           {ch.groupName && (
-                            <span className="text-yuui-accent3 font-medium truncate max-w-[150px] md:max-w-xs">
+                            <span className="text-accent/70 font-medium truncate max-w-[150px] md:max-w-xs">
                               {ch.groupName}
                             </span>
                           )}

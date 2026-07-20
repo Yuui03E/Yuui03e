@@ -115,6 +115,7 @@ pub fn run() {
             commands::mangadex_get_reading_progress,
             commands::mangadex_list_history,
             commands::mangadex_clear_history,
+            commands::mangadex_delete_history_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

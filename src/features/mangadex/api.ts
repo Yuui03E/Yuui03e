@@ -235,13 +235,18 @@ export async function searchManga(query: string): Promise<MangaInfo[]> {
 }
 
 /** Get trending/popular manga. */
-export async function getTrendingManga(limit = 30): Promise<MangaInfo[]> {
-  const qs = buildQuery({
+export async function getTrendingManga(
+  limit = 30,
+  filters?: DefaultFilters,
+): Promise<MangaInfo[]> {
+  const params: Record<string, string | string[]> = {
     limit: String(limit),
     "order[followedCount]": "desc",
     includes: ["cover_art"],
     contentRating: ["safe", "suggestive"],
-  });
+  };
+  if (filters?.offset) params.offset = String(filters.offset);
+  const qs = buildQuery(applyDefaults(params, filters));
   const json = await mdGet(`/manga?${qs}`);
   return (json.data as MangaDexManga[]).map(toMangaInfo);
 }
@@ -260,6 +265,45 @@ export async function getRecentlyAddedManga(
   const qs = buildQuery(applyDefaults(params, filters));
   const json = await mdGet(`/manga?${qs}`);
   return (json.data as MangaDexManga[]).map(toMangaInfo);
+}
+
+/** Get recommended manga (official Staff Picks). */
+export async function getRecommendedManga(
+  limit = 30,
+  filters?: DefaultFilters,
+): Promise<MangaInfo[]> {
+  const listId = "805ba886-dd99-4aa4-b460-4bd7c7b71352"; // Official Recommended List ID
+  try {
+    const mangaIds = await getCustomListMangaIds(listId);
+    if (mangaIds.length === 0) {
+      return getTrendingManga(limit, filters);
+    }
+    
+    const offsetVal = filters?.offset ?? 0;
+    const pageIds = mangaIds.slice(offsetVal, offsetVal + limit);
+    if (pageIds.length === 0) {
+      return getTrendingManga(limit, filters);
+    }
+
+    const resolved = await browseManga({
+      contentRating: filters?.contentRating ?? ["safe", "suggestive", "erotica"],
+      limit: pageIds.length,
+      ids: pageIds,
+    });
+
+    const origLangFilter = filters?.originalLanguage ?? undefined;
+
+    return pageIds
+      .map((id) => resolved.find((item) => item.id === id))
+      .filter((item): item is MangaInfo => !!item)
+      .filter(
+        (m) =>
+          !origLangFilter || m.originalLanguage === origLangFilter,
+      );
+  } catch (err) {
+    console.error("Failed to fetch recommended list:", err);
+    return getTrendingManga(limit, filters);
+  }
 }
 
 /** Get top-rated manga. */
@@ -348,9 +392,9 @@ export async function browseManga(
   if (filters.publicationDemographic?.length)
     params.publicationDemographic = filters.publicationDemographic;
   if (filters.originalLanguage)
-    params.originalLanguage = filters.originalLanguage;
+    params.originalLanguage = [filters.originalLanguage];
   if (filters.translatedLanguage)
-    params.translatedLanguage = filters.translatedLanguage;
+    params.availableTranslatedLanguage = [filters.translatedLanguage];
   params.contentRating = filters.contentRating ?? DEFAULT_CONTENT_RATING;
   if (filters.order) {
     for (const [k, v] of Object.entries(filters.order)) {
@@ -516,12 +560,16 @@ export async function saveReadingProgress(
   mangaId: string,
   chapterNumber: string | null,
   progress: number,
+  title?: string | null,
+  coverUrl?: string | null,
 ): Promise<void> {
   return invoke("mangadex_save_reading_progress", {
     chapterId,
     mangaId,
     chapterNumber,
     progress,
+    title,
+    coverUrl,
   });
 }
 
@@ -539,6 +587,10 @@ export async function listHistory(limit = 50): Promise<HistoryRow[]> {
 
 export async function clearHistory(): Promise<void> {
   return invoke("mangadex_clear_history");
+}
+
+export async function deleteHistoryEntries(chapterIds: string[]): Promise<void> {
+  return invoke("mangadex_delete_history_entries", { chapterIds });
 }
 
 export async function getCustomListMangaIds(listId: string): Promise<string[]> {

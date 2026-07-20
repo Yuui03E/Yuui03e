@@ -90,9 +90,20 @@ pub async fn mangadex_save_reading_progress(
     manga_id: String,
     chapter_number: Option<String>,
     progress: f64,
+    title: Option<String>,
+    cover_url: Option<String>,
     db: State<'_, Db>,
 ) -> Result<(), String> {
-    db::save_reading_progress(&db.0, &chapter_id, &manga_id, chapter_number.as_deref(), progress).await
+    db::save_reading_progress(
+        &db.0,
+        &chapter_id,
+        &manga_id,
+        chapter_number.as_deref(),
+        progress,
+        title.as_deref(),
+        cover_url.as_deref(),
+    )
+    .await
 }
 
 /// Get the most recent reading-progress row for a manga, or `None`.
@@ -117,4 +128,12 @@ pub async fn mangadex_list_history(
 #[tauri::command]
 pub async fn mangadex_clear_history(db: State<'_, Db>) -> Result<(), String> {
     db::clear_manga_history(&db.0).await
+}
+
+#[tauri::command]
+pub async fn mangadex_delete_history_entries(
+    chapter_ids: Vec<String>,
+    db: State<'_, Db>,
+) -> Result<(), String> {
+    db::delete_history_entries(&db.0, &chapter_ids).await
 }

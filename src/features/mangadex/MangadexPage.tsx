@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Search } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import {
   getTrendingManga,
   getTags,
-  listFavorites,
   listHistory,
   clearHistory,
   getSeasonalKey,
 } from "./api";
-import type { MangaInfo, TagInfo, LibraryEntry, HistoryRow } from "./api";
+import type { MangaInfo, TagInfo, HistoryRow } from "./api";
 import { useLibrary } from "../../store/library";
 import { loadMangadexSettings } from "../../store/slices/mangadexSlice";
 import { useDebounce } from "../../lib/hooks/useDebounce";
@@ -19,7 +19,6 @@ import FeaturedCarousel from "./components/FeaturedCarousel";
 import MangaGrid from "./components/MangaGrid";
 import TagFilterPanel from "./components/TagFilterPanel";
 import MangadexToolbar from "./components/MangadexToolbar";
-import LibraryTab from "./components/LibraryTab";
 import HistoryTab from "./components/HistoryTab";
 import { useMangadexFeed } from "./components/useMangadexFeed";
 
@@ -44,21 +43,43 @@ export default function MangadexPage() {
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [tagPanelOpen, setTagPanelOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Library / History
-  const [favorites, setFavorites] = useState<LibraryEntry[]>([]);
+  // Sync selectedTags from URL query parameter
+  useEffect(() => {
+    const tagParam = searchParams.get("tag");
+    if (tagParam) {
+      const tagsList = tagParam.split(",").filter(Boolean);
+      setSelectedTags((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(tagsList)) {
+          return tagsList;
+        }
+        return prev;
+      });
+      // Automatically switch to latest/browse if results are shown
+      setTab("latest");
+    } else {
+      setSelectedTags((prev) => (prev.length > 0 ? [] : prev));
+    }
+  }, [searchParams]);
+
+  // History
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
   const isResultsView = !!debouncedSearch.trim() || selectedTags.length > 0;
 
-  // Current season, derived from today's date so the "Summer 2026"-style
-  // button + heading stay in sync automatically.
-  const { season: seasonName, year: seasonYear } = useMemo(
-    () => getSeasonalKey(new Date()),
-    [],
+  // Current season state, initialized from today's date.
+  const [seasonalSeason, setSeasonalSeason] = useState<string>(() => 
+    getSeasonalKey(new Date()).season
   );
-  const seasonalLabel = `${seasonName.charAt(0).toUpperCase() + seasonName.slice(1)} ${seasonYear}`;
+  const [seasonalYear, setSeasonalYear] = useState<number>(() => 
+    getSeasonalKey(new Date()).year
+  );
+
+  const seasonalLabel = useMemo(() => {
+    return `${seasonalSeason.charAt(0).toUpperCase() + seasonalSeason.slice(1)} ${seasonalYear}`;
+  }, [seasonalSeason, seasonalYear]);
 
   // Load persisted settings once.
   useEffect(() => {
@@ -95,16 +116,17 @@ export default function MangadexPage() {
     mangadexOriginalLanguageFilter,
   ]);
 
-  // Load library + history when those tabs are opened.
+  const refreshHistory = () => {
+    listHistory(50)
+      .then(setHistory)
+      .catch(() => {});
+  };
+
+  // Load history when history tab is opened.
   useEffect(() => {
-    if (tab === "library")
-      listFavorites()
-        .then(setFavorites)
-        .catch(() => {});
-    if (tab === "history")
-      listHistory(50)
-        .then(setHistory)
-        .catch(() => {});
+    if (tab === "history") {
+      refreshHistory();
+    }
   }, [tab]);
 
   const feed = useMangadexFeed({
@@ -115,12 +137,22 @@ export default function MangadexPage() {
     translatedLanguage: mangadexTranslatedLanguage,
     originalLanguageFilter: mangadexOriginalLanguageFilter,
     browseMode: isResultsView,
+    seasonalSeason,
+    seasonalYear,
   });
 
   const toggleTag = (id: string) => {
-    setSelectedTags((s) =>
-      s.includes(id) ? s.filter((x) => x !== id) : [...s, id],
-    );
+    const next = selectedTags.includes(id)
+      ? selectedTags.filter((x) => x !== id)
+      : [...selectedTags, id];
+    
+    if (next.length > 0) {
+      setSearchParams({ tag: next.join(",") });
+    } else {
+      const copy = new URLSearchParams(searchParams);
+      copy.delete("tag");
+      setSearchParams(copy);
+    }
   };
 
   return (
@@ -161,182 +193,189 @@ export default function MangadexPage() {
         cardSize={cardSize}
         setCardSize={setCardSize}
         selectedTags={selectedTags}
-        onOpenFilters={() => setTagPanelOpen(true)}
+        tags={tags}
+        onToggleTag={toggleTag}
+        onOpenFilters={() => setTagPanelOpen(!tagPanelOpen)}
         moreMenuOpen={moreMenuOpen}
         setMoreMenuOpen={setMoreMenuOpen}
         seasonalLabel={seasonalLabel}
+        seasonalSeason={seasonalSeason}
+        seasonalYear={seasonalYear}
+        onSeasonChange={setSeasonalSeason}
+        onYearChange={setSeasonalYear}
+        filtersOpen={tagPanelOpen}
       />
 
-      {isResultsView ? (
-        <div className="mt-6 flex-1">
-          <p className="mb-3 text-sm text-yuui-muted">
-            {feed.loadingInitial
-              ? "Searching..."
-              : `${feed.items.length} result${feed.items.length !== 1 ? "s" : ""}${selectedTags.length ? ` · ${selectedTags.length} tag filter${selectedTags.length > 1 ? "s" : ""}` : ""}`}
-          </p>
-          <MangaGrid
-            items={feed.items}
-            cardSize={cardSize}
-            loading={feed.loadingInitial}
-            hasMore={feed.hasMore}
-            fetching={feed.fetching}
-            onLoadMore={feed.loadMore}
-            emptyText="No results found. Try a different search or fewer filters."
-            error={feed.error}
-            onRetry={feed.reload}
-          />
+      <div className="flex gap-6 items-start mt-4">
+        <div className="flex-1 min-w-0">
+          {isResultsView ? (
+            <div>
+              <p className="mb-3 text-sm text-yuui-muted">
+                {feed.loadingInitial
+                  ? "Searching..."
+                  : `${feed.items.length} result${feed.items.length !== 1 ? "s" : ""}${selectedTags.length ? ` · ${selectedTags.length} tag filter${selectedTags.length > 1 ? "s" : ""}` : ""}`}
+              </p>
+              <MangaGrid
+                items={feed.items}
+                cardSize={cardSize}
+                loading={feed.loadingInitial}
+                hasMore={feed.hasMore}
+                fetching={feed.fetching}
+                onLoadMore={feed.loadMore}
+                emptyText="No results found. Try a different search or fewer filters."
+                error={feed.error}
+                onRetry={feed.reload}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Featured carousel (only on the default landing tab) */}
+              {tab === "latest" && (
+                <FeaturedCarousel
+                  items={featured}
+                  loading={loadingFeatured}
+                  selectedTags={selectedTags}
+                  onToggleTag={toggleTag}
+                />
+              )}
+
+              {/* ===================== LATEST UPDATES ===================== */}
+              {tab === "latest" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No recent updates found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                    showChapterSubtitle
+                  />
+                </div>
+              )}
+
+              {/* ===================== POPULAR NEW ===================== */}
+              {tab === "popular" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No popular titles found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                  />
+                </div>
+              )}
+
+              {/* ===================== TOP RATED ===================== */}
+              {tab === "top" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No top rated titles found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                  />
+                </div>
+              )}
+
+              {/* ===================== RECENTLY ADDED ===================== */}
+              {tab === "recent" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No recently added titles found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                  />
+                </div>
+              )}
+
+              {/* ===================== SEASONAL ===================== */}
+              {tab === "seasonal" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No seasonal titles found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                  />
+                </div>
+              )}
+
+              {/* ===================== RECOMMENDED ===================== */}
+              {tab === "recommended" && (
+                <div className="mt-0 flex-1">
+                  <MangaGrid
+                    items={feed.items}
+                    cardSize={cardSize}
+                    loading={feed.loadingInitial}
+                    hasMore={feed.hasMore}
+                    fetching={feed.fetching}
+                    onLoadMore={feed.loadMore}
+                    emptyText="No recommended titles found."
+                    error={feed.error}
+                    onRetry={feed.reload}
+                  />
+                </div>
+              )}
+
+
+              {/* ===================== HISTORY ===================== */}
+              {tab === "history" && (
+                <HistoryTab
+                  history={history}
+                  cardSize={cardSize}
+                  onBrowse={() => setTab("latest")}
+                  onClear={async () => {
+                    await clearHistory();
+                    setHistory([]);
+                  }}
+                  onRefresh={refreshHistory}
+                />
+              )}
+            </>
+          )}
         </div>
-      ) : (
-        <>
-          {/* Featured carousel (only on the default landing tab) */}
-          {tab === "latest" && (
-            <FeaturedCarousel items={featured} loading={loadingFeatured} />
-          )}
 
-          {/* ===================== LATEST UPDATES ===================== */}
-          {tab === "latest" && (
-            <div className="mt-6 flex-1">
-              <p className="mb-3 text-sm text-yuui-muted">
-                {feed.loadingInitial
-                  ? "Loading latest updates..."
-                  : "Latest chapter updates from MangaDex"}
-              </p>
-              <MangaGrid
-                items={feed.items}
-                cardSize={cardSize}
-                loading={feed.loadingInitial}
-                hasMore={feed.hasMore}
-                fetching={feed.fetching}
-                onLoadMore={feed.loadMore}
-                emptyText="No recent updates found."
-                error={feed.error}
-                onRetry={feed.reload}
-                showChapterSubtitle
-              />
-            </div>
-          )}
-
-          {/* ===================== POPULAR NEW ===================== */}
-          {tab === "popular" && (
-            <div className="mt-6 flex-1">
-              <p className="mb-3 text-sm text-yuui-muted">
-                {feed.loadingInitial
-                  ? "Loading popular titles..."
-                  : "Trending new titles on MangaDex"}
-              </p>
-              <MangaGrid
-                items={feed.items}
-                cardSize={cardSize}
-                loading={feed.loadingInitial}
-                hasMore={feed.hasMore}
-                fetching={feed.fetching}
-                onLoadMore={feed.loadMore}
-                emptyText="No popular titles found."
-                error={feed.error}
-                onRetry={feed.reload}
-              />
-            </div>
-          )}
-
-          {/* ===================== TOP RATED ===================== */}
-          {tab === "top" && (
-            <div className="mt-6 flex-1">
-              <p className="mb-3 text-sm text-yuui-muted">
-                {feed.loadingInitial
-                  ? "Loading top rated..."
-                  : "Highest rated manga on MangaDex"}
-              </p>
-              <MangaGrid
-                items={feed.items}
-                cardSize={cardSize}
-                loading={feed.loadingInitial}
-                hasMore={feed.hasMore}
-                fetching={feed.fetching}
-                onLoadMore={feed.loadMore}
-                emptyText="No top rated titles found."
-                error={feed.error}
-                onRetry={feed.reload}
-              />
-            </div>
-          )}
-
-          {/* ===================== RECENTLY ADDED ===================== */}
-          {tab === "recent" && (
-            <div className="mt-6 flex-1">
-              <p className="mb-3 text-sm text-yuui-muted">
-                {feed.loadingInitial
-                  ? "Loading recently added..."
-                  : "Recently added titles to MangaDex"}
-              </p>
-              <MangaGrid
-                items={feed.items}
-                cardSize={cardSize}
-                loading={feed.loadingInitial}
-                hasMore={feed.hasMore}
-                fetching={feed.fetching}
-                onLoadMore={feed.loadMore}
-                emptyText="No recently added titles found."
-                error={feed.error}
-                onRetry={feed.reload}
-              />
-            </div>
-          )}
-
-          {/* ===================== SEASONAL ===================== */}
-          {tab === "seasonal" && (
-            <div className="mt-6 flex-1">
-              <p className="mb-3 text-sm text-yuui-muted">
-                {feed.loadingInitial
-                  ? "Loading seasonal titles..."
-                  : `Trending ${seasonalLabel} titles on MangaDex`}
-              </p>
-              <MangaGrid
-                items={feed.items}
-                cardSize={cardSize}
-                loading={feed.loadingInitial}
-                hasMore={feed.hasMore}
-                fetching={feed.fetching}
-                onLoadMore={feed.loadMore}
-                emptyText="No seasonal titles found."
-                error={feed.error}
-                onRetry={feed.reload}
-              />
-            </div>
-          )}
-
-          {/* ===================== LIBRARY ===================== */}
-          {tab === "library" && (
-            <LibraryTab
-              favorites={favorites}
-              cardSize={cardSize}
-              onBrowse={() => setTab("latest")}
-            />
-          )}
-
-          {/* ===================== HISTORY ===================== */}
-          {tab === "history" && (
-            <HistoryTab
-              history={history}
-              onBrowse={() => setTab("latest")}
-              onClear={async () => {
-                await clearHistory();
-                setHistory([]);
+        <AnimatePresence>
+          {tagPanelOpen && (
+            <TagFilterPanel
+              tags={tags}
+              selected={selectedTags}
+              onToggle={toggleTag}
+              onClear={() => {
+                const copy = new URLSearchParams(searchParams);
+                copy.delete("tag");
+                setSearchParams(copy);
               }}
+              onClose={() => setTagPanelOpen(false)}
             />
           )}
-        </>
-      )}
-
-      {/* Tag filter slide-over */}
-      {tagPanelOpen && (
-        <TagFilterPanel
-          tags={tags}
-          selected={selectedTags}
-          onToggle={toggleTag}
-          onClear={() => setSelectedTags([])}
-          onClose={() => setTagPanelOpen(false)}
-        />
-      )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

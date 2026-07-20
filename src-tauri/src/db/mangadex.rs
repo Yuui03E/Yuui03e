@@ -144,16 +144,22 @@ pub async fn save_reading_progress(
     manga_id: &str,
     chapter_number: Option<&str>,
     progress: f64,
+    title: Option<&str>,
+    cover_url: Option<&str>,
 ) -> Result<(), String> {
-    // Ensure a library row exists so the FK isn't violated. The row will be a
-    // non-favorite placeholder; if the user later favorites the manga the
-    // `add_favorite` upsert will flip the flag.
+    // Ensure a library row exists so the FK isn't violated.
+    // If it already exists, update the title and cover_url if they are provided.
     sqlx::query(
-        "INSERT OR IGNORE INTO manga_library (manga_id, added_at, is_favorite)
-         VALUES (?, ?, 0)",
+        "INSERT INTO manga_library (manga_id, added_at, is_favorite, title, cover_url)
+         VALUES (?, ?, 0, ?, ?)
+         ON CONFLICT(manga_id) DO UPDATE SET
+            title     = CASE WHEN excluded.title IS NOT NULL THEN excluded.title ELSE manga_library.title END,
+            cover_url = CASE WHEN excluded.cover_url IS NOT NULL THEN excluded.cover_url ELSE manga_library.cover_url END",
     )
     .bind(manga_id)
     .bind(chrono::Utc::now().timestamp())
+    .bind(title)
+    .bind(cover_url)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -243,5 +249,25 @@ pub async fn clear_history(pool: &SqlitePool) -> Result<(), String> {
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete specific reading-history rows by chapter IDs.
+pub async fn delete_history_entries(
+    pool: &SqlitePool,
+    chapter_ids: &[String],
+) -> Result<(), String> {
+    if chapter_ids.is_empty() {
+        return Ok(());
+    }
+    let query_str = format!(
+        "DELETE FROM manga_reading_history WHERE chapter_id IN ({})",
+        chapter_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+    );
+    let mut query = sqlx::query(&query_str);
+    for id in chapter_ids {
+        query = query.bind(id);
+    }
+    query.execute(pool).await.map_err(|e| e.to_string())?;
     Ok(())
 }

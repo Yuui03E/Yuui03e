@@ -23,7 +23,7 @@ pub use playback::{PlaybackHistoryEntry, save_playback_position, get_playback_po
 pub use mangadex::{LibraryEntry, ProgressRow, HistoryRow, FavoritePayload,
                    add_favorite, remove_favorite, is_favorite, list_favorites,
                    save_reading_progress, get_reading_progress, list_history,
-                   clear_history as clear_manga_history};
+                   clear_history as clear_manga_history, delete_history_entries};
 
 /// Wrapper so we can `app.manage(Db(pool, cache_dir))` and pull it out of Tauri state.
 pub struct Db(pub SqlitePool, pub std::path::PathBuf);
