@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Heart } from "lucide-react";
-import type { MangaInfo } from "./api";
-import { useFavorite } from "./hooks";
+import type { MangaInfo } from "../api";
+import { useFavorite } from "../hooks";
 
 interface Props {
   manga: MangaInfo;
@@ -18,6 +18,7 @@ export default function MangaPosterCard({
 }: Props) {
   const { fav, toggle } = useFavorite(showFavorite ? manga.id : undefined);
   const [hovered, setHovered] = useState(false);
+  const [coverError, setCoverError] = useState(false);
 
   const onHeart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -35,11 +36,12 @@ export default function MangaPosterCard({
         onClick={onClick}
         className="relative aspect-[2/3] w-full cursor-pointer overflow-hidden rounded-xl border border-white/[0.06] bg-yuui-panel shadow-card"
       >
-        {manga.coverUrl ? (
+        {manga.coverUrl && !coverError ? (
           <img
             src={manga.coverUrl}
             alt={manga.title}
             loading="lazy"
+            onError={() => setCoverError(true)}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           />
         ) : (

@@ -249,7 +249,11 @@ export function useMangadexFeed({
 
         setItems((prev) => (isInitial ? newItems : [...prev, ...newItems]));
         const nextHasMore =
-          curTab === "seasonal" ? seasonalHasMore : newItems.length === LIMIT;
+          curTab === "seasonal"
+            ? seasonalHasMore
+            : curTab === "latest" || curTab === "popular" || curTab === "recommended"
+              ? newItems.length > 0
+              : newItems.length === LIMIT;
         setHasMore(nextHasMore);
         stateRef.current.hasMore = nextHasMore;
         const nextOffset = offsetVal + LIMIT;

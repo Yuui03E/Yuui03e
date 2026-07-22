@@ -10,15 +10,34 @@ const CONTENT_RATINGS = [
   "erotica",
   "pornographic",
 ] as const;
-const LANGS = [
+
+const TRANSLATED_LANGS = [
+  { code: "", label: "Any (All Languages)" },
   { code: "en", label: "English" },
+  { code: "es", label: "Spanish" },
+  { code: "es-la", label: "Spanish (Latin America)" },
+  { code: "pt-br", label: "Portuguese (Brazil)" },
+  { code: "pt-pt", label: "Portuguese (Portugal)" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "it", label: "Italian" },
+  { code: "ru", label: "Russian" },
+  { code: "tr", label: "Turkish" },
+  { code: "id", label: "Indonesian" },
+  { code: "vi", label: "Vietnamese" },
+  { code: "pl", label: "Polish" },
+  { code: "ar", label: "Arabic" },
+  { code: "th", label: "Thai" },
+  { code: "tl", label: "Tagalog / Filipino" },
   { code: "ja", label: "Japanese" },
   { code: "ko", label: "Korean" },
-  { code: "zh", label: "Chinese" },
-  { code: "es", label: "Spanish" },
-  { code: "fr", label: "French" },
-  { code: "pt-br", label: "Portuguese (BR)" },
+  { code: "zh", label: "Chinese (Simplified)" },
+  { code: "zh-hk", label: "Chinese (Traditional)" },
+  { code: "uk", label: "Ukrainian" },
+  { code: "hi", label: "Hindi" },
 ] as const;
+
+const LANGS = TRANSLATED_LANGS.filter((l) => l.code !== "");
 
 function Section({
   title,
@@ -127,14 +146,14 @@ export function MangadexSection() {
 
       <Section
         title="Translated Language"
-        desc="Only chapters translated into this language are listed in the reader."
+        desc="Filter chapter updates and reader by translated language (select Any for all languages)."
       >
         <select
           value={mangadexTranslatedLanguage}
           onChange={(e) => setMangadexTranslatedLanguage(e.target.value)}
           className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-white/90 outline-none focus:border-yuui-accent/40"
         >
-          {LANGS.map((l) => (
+          {TRANSLATED_LANGS.map((l) => (
             <option key={l.code} value={l.code} className="bg-yuui-surface">
               {l.label}
             </option>

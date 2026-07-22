@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import type { MangaInfo } from "./api";
+import type { MangaInfo } from "../api";
 
 interface MangaCardProps {
   manga: MangaInfo;
@@ -16,6 +16,7 @@ export function MangaCard({
   subtitle,
 }: MangaCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [coverError, setCoverError] = useState(false);
 
   if (variant === "rail") {
     return (
@@ -24,11 +25,12 @@ export function MangaCard({
         className="group flex h-44 w-32 shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-yuui-surface/40 text-left transition-all hover:border-white/[0.15]"
       >
         <div className="relative aspect-[3/4] w-full overflow-hidden bg-white/5">
-          {manga.coverUrl ? (
+          {manga.coverUrl && !coverError ? (
             <img
               src={manga.coverUrl}
               alt={manga.title}
               loading="lazy"
+              onError={() => setCoverError(true)}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
@@ -63,11 +65,12 @@ export function MangaCard({
         className="relative cursor-pointer overflow-hidden rounded-xl border border-white/[0.06] bg-yuui-panel shadow-card w-full aspect-[3/4]"
       >
         {/* Cover Image */}
-        {manga.coverUrl ? (
+        {manga.coverUrl && !coverError ? (
           <img
             src={manga.coverUrl}
             alt={manga.title}
             loading="lazy"
+            onError={() => setCoverError(true)}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           />
         ) : (

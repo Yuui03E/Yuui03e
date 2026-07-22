@@ -7,12 +7,13 @@ import {
   getChapterPages,
   getChapters,
   getMangaDetail,
+  getMangaIdFromChapter,
   saveReadingProgress,
-} from "./api";
-import type { ChapterInfo } from "./api";
-import type { MangaDexPage } from "./types";
-import { useLibrary } from "../../store/library";
-import ReaderContextMenu from "./components/ReaderContextMenu";
+} from "../api";
+import type { ChapterInfo } from "../api";
+import type { MangaDexPage } from "../types";
+import { useLibrary } from "../../../store/library";
+import ReaderContextMenu from "./ReaderContextMenu";
 
 type ReaderMode = "paged" | "scroll";
 type FitMode = "width" | "height" | "original";
@@ -25,6 +26,7 @@ declare global {
       mangaId?: string;
       title?: string;
       coverUrl?: string;
+      fromHistory?: boolean;
     };
   }
 }
@@ -45,17 +47,34 @@ const BACKGROUND_CLASS: Record<string, string> = {
 function useMangaIdForChapter(chapterId: string | undefined): {
   mangaId: string | null;
   allChapters: ChapterInfo[];
+  resolvedTitle: string | null;
+  resolvedCoverUrl: string | null;
 } {
   const [mangaId, setMangaId] = useState<string | null>(null);
   const [allChapters, setAllChapters] = useState<ChapterInfo[]>([]);
+  const [resolvedTitle, setResolvedTitle] = useState<string | null>(null);
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!chapterId) return;
     let alive = true;
     (async () => {
-      const mid = window.__mdNav?.mangaId ?? null;
+      let mid = window.__mdNav?.mangaId ?? null;
+      let title = window.__mdNav?.title ?? null;
+      let coverUrl = window.__mdNav?.coverUrl ?? null;
+
+      if (!mid) {
+        const res = await getMangaIdFromChapter(chapterId);
+        mid = res.mangaId;
+        if (!title) title = res.title;
+        if (!coverUrl) coverUrl = res.coverUrl;
+      }
+
       if (!alive) return;
-      setMangaId(mid);
+      if (mid) setMangaId(mid);
+      if (title) setResolvedTitle(title);
+      if (coverUrl) setResolvedCoverUrl(coverUrl);
+
       if (mid) {
         try {
           const chs = await getChapters(mid);
@@ -70,7 +89,7 @@ function useMangaIdForChapter(chapterId: string | undefined): {
     };
   }, [chapterId]);
 
-  return { mangaId, allChapters };
+  return { mangaId, allChapters, resolvedTitle, resolvedCoverUrl };
 }
 
 export default function ChapterReader() {
@@ -96,7 +115,8 @@ export default function ChapterReader() {
   const showControls = autoVisible && !userHidden;
   // Right-click context menu position (null = closed).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const { mangaId, allChapters } = useMangaIdForChapter(chapterId);
+  const { mangaId, allChapters, resolvedTitle, resolvedCoverUrl } =
+    useMangaIdForChapter(chapterId);
   const [mangaDetail, setMangaDetail] = useState<{
     title?: string;
     coverUrl?: string | null;
@@ -111,11 +131,11 @@ export default function ChapterReader() {
   useEffect(() => {
     if (!mangaId) return;
     let alive = true;
-    const cachedTitle = window.__mdNav?.title;
-    const cachedCover = window.__mdNav?.coverUrl;
-    if (cachedTitle && cachedCover) {
+    const cachedTitle = window.__mdNav?.title ?? resolvedTitle;
+    const cachedCover = window.__mdNav?.coverUrl ?? resolvedCoverUrl;
+    if (cachedTitle) {
       setMangaDetail({ title: cachedTitle, coverUrl: cachedCover });
-      return;
+      if (cachedCover) return;
     }
 
     getMangaDetail(mangaId)
@@ -129,7 +149,7 @@ export default function ChapterReader() {
     return () => {
       alive = false;
     };
-  }, [mangaId]);
+  }, [mangaId, resolvedTitle, resolvedCoverUrl]);
 
   // Sibling chapters (ascending by chapter number).
   const { prevChapter, nextChapter } = useMemo(() => {
@@ -161,19 +181,23 @@ export default function ChapterReader() {
         setPages(p);
 
         let initialPage = 0;
-        const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
-        if (cached) {
-          const parts = cached.split("/");
-          if (parts.length > 0) {
-            const pageNum = parseInt(parts[0], 10);
-            // Restore mid-chapter progress only. A saved position on the
-            // final page means the chapter was finished (or the position was
-            // poisoned by the old zero-height-observer bug) — restart from
-            // page 1 instead of opening at the end.
-            if (!isNaN(pageNum) && pageNum > 0 && pageNum < p.length) {
-              initialPage = pageNum - 1;
+        try {
+          const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
+          if (cached) {
+            const parts = cached.split("/");
+            if (parts.length > 0) {
+              const pageNum = parseInt(parts[0], 10);
+              // Restore mid-chapter progress only. A saved position on the
+              // final page means the chapter was finished (or the position was
+              // poisoned by the old zero-height-observer bug) — restart from
+              // page 1 instead of opening at the end.
+              if (!isNaN(pageNum) && pageNum > 0 && pageNum < p.length) {
+                initialPage = pageNum - 1;
+              }
             }
           }
+        } catch {
+          // localStorage unavailable — proceed without cached page
         }
         setCurrentPage(initialPage);
         setScrollPage(initialPage);
@@ -216,16 +240,20 @@ export default function ChapterReader() {
     if (mangaId && mangaDetail && allChapters.length > 0) {
       const cn = allChapters.find((c) => c.id === chapterId)?.chapter ?? null;
       let initialPage = 0;
-      const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
-      if (cached) {
-        const parts = cached.split("/");
-        if (parts.length > 0) {
-          const pageNum = parseInt(parts[0], 10);
-          // Mid-chapter positions only (see the page-load effect above).
-          if (!isNaN(pageNum) && pageNum > 0 && pageNum < pages.length) {
-            initialPage = pageNum - 1;
+      try {
+        const cached = localStorage.getItem(`yuui_md_page_${chapterId}`);
+        if (cached) {
+          const parts = cached.split("/");
+          if (parts.length > 0) {
+            const pageNum = parseInt(parts[0], 10);
+            // Mid-chapter positions only (see the page-load effect above).
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum < pages.length) {
+              initialPage = pageNum - 1;
+            }
           }
         }
+      } catch {
+        // localStorage unavailable — proceed without cached page
       }
       const frac = pages.length > 0 ? (initialPage + 1) / pages.length : 0;
       saveReadingProgress(
@@ -247,10 +275,14 @@ export default function ChapterReader() {
 
     // Save current page info in localStorage for history view
     if (pages.length > 0) {
-      localStorage.setItem(
-        `yuui_md_page_${chapterId}`,
-        `${pageIndex + 1}/${pages.length}`,
-      );
+      try {
+        localStorage.setItem(
+          `yuui_md_page_${chapterId}`,
+          `${pageIndex + 1}/${pages.length}`,
+        );
+      } catch {
+        // localStorage may be full or unavailable — silently ignore
+      }
     }
 
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -278,7 +310,7 @@ export default function ChapterReader() {
       setCurrentPage(np);
       persistProgress((np + 1) / pages.length, np);
     } else if (nextChapter) {
-      navigate(`/mangadex/reader/${nextChapter.id}`);
+      navigate(`/mangadex/reader/${nextChapter.id}`, { replace: true });
     }
   };
 
@@ -288,7 +320,7 @@ export default function ChapterReader() {
       setCurrentPage(np);
       persistProgress((np + 1) / pages.length, np);
     } else if (prevChapter) {
-      navigate(`/mangadex/reader/${prevChapter.id}`);
+      navigate(`/mangadex/reader/${prevChapter.id}`, { replace: true });
     }
   };
 
@@ -298,12 +330,25 @@ export default function ChapterReader() {
     persistProgress((np + 1) / pages.length, np);
   };
 
-  /** Back to the manga detail page. `navigate(-1)` is wrong here after
-   *  chapter-to-chapter navigation (it would step through chapters), so go
-   *  to the detail route directly when we know the manga id. */
-  const goBackToManga = () => {
-    if (mangaId) navigate(`/mangadex/manga/${mangaId}`);
-    else navigate(-1);
+  /** Top-left header Back button: returns to History tab if opened from history,
+   *  otherwise replaces reader entry with the manga details page. */
+  const goBackHeader = () => {
+    if (window.__mdNav?.fromHistory) {
+      navigate("/mangadex?tab=history", { replace: true });
+    } else if (mangaId) {
+      navigate(`/mangadex/manga/${mangaId}`, { replace: true });
+    } else {
+      navigate("/mangadex", { replace: true });
+    }
+  };
+
+  /** Context menu "Back to Manga" button: replaces reader entry with the manga details page. */
+  const goBackToMangaDetail = () => {
+    if (mangaId) {
+      navigate(`/mangadex/manga/${mangaId}`, { replace: true });
+    } else {
+      navigate("/mangadex", { replace: true });
+    }
   };
 
   // ---- Scroll mode: IntersectionObserver to track current page -------
@@ -350,7 +395,7 @@ export default function ChapterReader() {
       // Escape is fixed: close menu, else back to the manga.
       if (e.key === "Escape") {
         if (menu) setMenu(null);
-        else goBackToManga();
+        else goBackHeader();
         return;
       }
 
@@ -418,9 +463,13 @@ export default function ChapterReader() {
   // The title bar spans the full window width, but the sidebar (56px) sits
   // under its left edge — offset the portal content so the Back button
   // doesn't render on top of the sidebar. Tracks live hide/show toggles.
-  const [sidebarHidden, setSidebarHidden] = useState(
-    () => localStorage.getItem("yuui_sidebar_hidden") === "true",
-  );
+  const [sidebarHidden, setSidebarHidden] = useState(() => {
+    try {
+      return localStorage.getItem("yuui_sidebar_hidden") === "true";
+    } catch {
+      return false;
+    }
+  });
   useEffect(() => {
     const onSidebar = (e: Event) =>
       setSidebarHidden((e as CustomEvent).detail?.hidden === true);
@@ -456,7 +505,7 @@ export default function ChapterReader() {
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6">
         <p className="text-yuui-muted">Could not load chapter pages.</p>
         <button
-          onClick={goBackToManga}
+          onClick={goBackHeader}
           className="rounded-xl bg-yuui-accent px-4 py-2 text-sm font-semibold text-white"
         >
           Go back
@@ -522,14 +571,14 @@ export default function ChapterReader() {
       {titlebarSlot &&
         createPortal(
           <div
-            className={`flex h-full min-w-0 flex-1 items-center gap-3 px-3 transition-opacity duration-300 ${
+            className={`flex h-full min-w-0 flex-1 items-center gap-3 transition-opacity duration-300 ${
               showControls ? "opacity-100" : "opacity-0"
             }`}
             style={{ paddingLeft: sidebarHidden ? 12 : 56 + 12 }}
           >
             {/* Back button — top left, in the title bar */}
             <button
-              onClick={goBackToManga}
+              onClick={goBackHeader}
               data-tauri-drag-region="false"
               className={`no-drag flex shrink-0 items-center gap-1.5 rounded-lg bg-black/40 px-2.5 py-1 text-sm text-white/70 backdrop-blur transition-colors hover:bg-black/60 hover:text-white ${
                 showControls ? "pointer-events-auto" : "pointer-events-none"
@@ -699,12 +748,12 @@ export default function ChapterReader() {
           onNextPage={goNext}
           onJumpTo={jumpTo}
           onPrevChapter={() => {
-            if (prevChapter) navigate(`/mangadex/reader/${prevChapter.id}`);
+            if (prevChapter) navigate(`/mangadex/reader/${prevChapter.id}`, { replace: true });
           }}
           onNextChapter={() => {
-            if (nextChapter) navigate(`/mangadex/reader/${nextChapter.id}`);
+            if (nextChapter) navigate(`/mangadex/reader/${nextChapter.id}`, { replace: true });
           }}
-          onBack={goBackToManga}
+          onBack={goBackToMangaDetail}
         />
       )}
     </div>

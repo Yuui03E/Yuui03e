@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import {
-  getTrendingManga,
+  getFeaturedManga,
   getTags,
   listHistory,
   clearHistory,
@@ -19,7 +19,7 @@ import FeaturedCarousel from "./components/FeaturedCarousel";
 import MangaGrid from "./components/MangaGrid";
 import TagFilterPanel from "./components/TagFilterPanel";
 import MangadexToolbar from "./components/MangadexToolbar";
-import HistoryTab from "./components/HistoryTab";
+import HistoryTab from "./library/HistoryTab";
 import { useMangadexFeed } from "./components/useMangadexFeed";
 
 export default function MangadexPage() {
@@ -31,22 +31,74 @@ export default function MangadexPage() {
     setCardSize,
   } = useLibrary();
 
-  const [tab, setTab] = useState<Tab>("latest");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const tabParam = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    const validTabs: Tab[] = [
+      "latest",
+      "popular",
+      "top",
+      "recent",
+      "seasonal",
+      "recommended",
+      "history",
+    ];
+    return tabParam && validTabs.includes(tabParam) ? tabParam : "latest";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 500);
 
-  // Featured carousel (loaded once)
+  // Featured carousel (loaded once, refreshed every 5 minutes)
   const [featured, setFeatured] = useState<MangaInfo[]>([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
+
+  const fetchFeatured = useCallback(async () => {
+    setLoadingFeatured(true);
+    try {
+      const f = await getFeaturedManga(10, {
+        contentRating: mangadexContentRating,
+        translatedLanguage: mangadexTranslatedLanguage,
+        originalLanguage: mangadexOriginalLanguageFilter ?? undefined,
+      });
+      setFeatured(f);
+    } catch {
+      // best-effort
+    } finally {
+      setLoadingFeatured(false);
+    }
+  }, [
+    mangadexContentRating,
+    mangadexTranslatedLanguage,
+    mangadexOriginalLanguageFilter,
+  ]);
+
+  // Initial load + periodic refresh every 5 minutes.
+  useEffect(() => {
+    fetchFeatured();
+    const t = setInterval(fetchFeatured, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [fetchFeatured]);
 
   // Tags list
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [tagPanelOpen, setTagPanelOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Sync selectedTags from URL query parameter
+  // Sync selectedTags and tab from URL query parameter
   useEffect(() => {
+    const tabParam = searchParams.get("tab") as Tab | null;
+    const validTabs: Tab[] = [
+      "latest",
+      "popular",
+      "top",
+      "recent",
+      "seasonal",
+      "recommended",
+      "history",
+    ];
+    if (tabParam && validTabs.includes(tabParam)) {
+      setTab(tabParam);
+    }
+
     const tagParam = searchParams.get("tag");
     if (tagParam) {
       const tagsList = tagParam.split(",").filter(Boolean);
@@ -56,8 +108,9 @@ export default function MangadexPage() {
         }
         return prev;
       });
-      // Automatically switch to latest/browse if results are shown
-      setTab("latest");
+      if (!tabParam) {
+        setTab("latest");
+      }
     } else {
       setSelectedTags((prev) => (prev.length > 0 ? [] : prev));
     }
@@ -88,19 +141,9 @@ export default function MangadexPage() {
     });
   }, []);
 
-  // Fetch featured trending manga and tags (on load and filters change)
+  // Fetch tags (on load and filters change)
   useEffect(() => {
     let alive = true;
-    setLoadingFeatured(true);
-    getTrendingManga(12)
-      .then((f) => {
-        if (alive) setFeatured(f);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (alive) setLoadingFeatured(false);
-      });
-
     getTags()
       .then((t) => {
         if (alive) setTags(t);
@@ -187,7 +230,12 @@ export default function MangadexPage() {
       {/* Tabs and Toolbar */}
       <MangadexToolbar
         tab={tab}
-        setTab={setTab}
+        setTab={(newTab) => {
+          setTab(newTab);
+          const copy = new URLSearchParams(searchParams);
+          copy.set("tab", newTab);
+          setSearchParams(copy);
+        }}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         cardSize={cardSize}

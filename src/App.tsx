@@ -13,8 +13,8 @@ import CalendarPage from "./features/calendar/CalendarPage";
 import DiscoverPage from "./features/discover/DiscoverPage";
 import ProfilePage from "./features/library/ProfilePage";
 import MangadexPage from "./features/mangadex/MangadexPage";
-import MangaDetail from "./features/mangadex/MangaDetail";
-import ChapterReader from "./features/mangadex/ChapterReader";
+import MangaDetail from "./features/mangadex/detail/MangaDetail";
+import ChapterReader from "./features/mangadex/reader/ChapterReader";
 
 function Page({ children }: { children: React.ReactNode }) {
   return (

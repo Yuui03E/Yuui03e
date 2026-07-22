@@ -197,7 +197,6 @@ function buildQuery(params: Record<string, string | string[]>): string {
 
 /** Default content-rating set when none is supplied by the caller. */
 const DEFAULT_CONTENT_RATING = ["safe", "suggestive"];
-const DEFAULT_LANG = "en";
 
 interface DefaultFilters {
   contentRating?: string[];
@@ -234,7 +233,7 @@ export async function searchManga(query: string): Promise<MangaInfo[]> {
   return (json.data as MangaDexManga[]).map(toMangaInfo);
 }
 
-/** Get trending/popular manga. */
+/** Get trending/popular manga. Matches the MangaDex website's "Popular" section. */
 export async function getTrendingManga(
   limit = 30,
   filters?: DefaultFilters,
@@ -243,7 +242,10 @@ export async function getTrendingManga(
     limit: String(limit),
     "order[followedCount]": "desc",
     includes: ["cover_art"],
-    contentRating: ["safe", "suggestive"],
+    // Do NOT filter by contentRating — the website shows all ratings.
+    // Users control filtering via settings; the "Popular" section should
+    // match the website exactly.
+    contentRating: filters?.contentRating ?? ["safe", "suggestive", "r15", "erotica"],
   };
   if (filters?.offset) params.offset = String(filters.offset);
   const qs = buildQuery(applyDefaults(params, filters));
@@ -322,21 +324,46 @@ export async function getTopRatedManga(
   return (json.data as MangaDexManga[]).map(toMangaInfo);
 }
 
-/** Get popular new titles (alias of trending, kept for clarity in the UI). */
+/** Get popular new titles matching MangaDex's "Popular New Titles" section. */
 export async function getPopularNewTitles(
   limit = 30,
   filters?: DefaultFilters,
 ): Promise<MangaInfo[]> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19);
+
   const params: Record<string, string | string[]> = {
     limit: String(limit),
     "order[followedCount]": "desc",
     includes: ["cover_art"],
+    createdAtSince: thirtyDaysAgo,
+    hasAvailableChapters: "true",
   };
   if (filters?.offset) params.offset = String(filters.offset);
+  if (filters?.originalLanguage)
+    params.originalLanguage = [filters.originalLanguage];
+  if (filters?.translatedLanguage && filters.translatedLanguage.trim() !== "")
+    params.availableTranslatedLanguage = [filters.translatedLanguage];
+
   const qs = buildQuery(applyDefaults(params, filters));
   const json = await mdGet(`/manga?${qs}`);
-  return (json.data as MangaDexManga[]).map(toMangaInfo);
+  const results = (json.data as MangaDexManga[]).map(toMangaInfo);
+
+  // If 30 days yields no results (e.g. strict filters), fall back to 90 days
+  if (results.length === 0 && !filters?.offset) {
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 19);
+    const fallbackParams = { ...params, createdAtSince: ninetyDaysAgo };
+    const fallbackQs = buildQuery(applyDefaults(fallbackParams, filters));
+    const fallbackJson = await mdGet(`/manga?${fallbackQs}`);
+    return (fallbackJson.data as MangaDexManga[]).map(toMangaInfo);
+  }
+
+  return results;
 }
+
 
 /** Fetch the full tag list from `/manga/tag`. Results are cached in-process. */
 let tagCache: TagInfo[] | null = null;
@@ -393,7 +420,7 @@ export async function browseManga(
     params.publicationDemographic = filters.publicationDemographic;
   if (filters.originalLanguage)
     params.originalLanguage = [filters.originalLanguage];
-  if (filters.translatedLanguage)
+  if (filters.translatedLanguage && filters.translatedLanguage.trim() !== "")
     params.availableTranslatedLanguage = [filters.translatedLanguage];
   params.contentRating = filters.contentRating ?? DEFAULT_CONTENT_RATING;
   if (filters.order) {
@@ -421,15 +448,18 @@ export async function getLatestChapterUpdates(
   filters?: DefaultFilters,
 ): Promise<ChapterUpdateInfo[]> {
   const contentRating = filters?.contentRating ?? DEFAULT_CONTENT_RATING;
-  const lang = filters?.translatedLanguage ?? DEFAULT_LANG;
-
+  // Match the website's Latest Updates page: do NOT filter by translatedLanguage
+  // unless the user explicitly set a language in settings.
+  const langFilter = filters?.translatedLanguage;
   const params: Record<string, string | string[]> = {
     limit: String(limit),
     "order[readableAt]": "desc",
-    translatedLanguage: [lang],
     contentRating,
     includes: ["scanlation_group"],
   };
+  if (langFilter && langFilter.trim() !== "") {
+    params.translatedLanguage = [langFilter];
+  }
   if (filters?.offset) params.offset = String(filters.offset);
   const chapterQs = buildQuery(params);
   const chapterJson = await mdGet(`/chapter?${chapterQs}`);
@@ -460,6 +490,7 @@ export async function getLatestChapterUpdates(
       ids: Array.from(mangaIds),
       includes: ["cover_art"],
       limit: String(mangaIds.size),
+      contentRating,
     });
     const mangaJson = await mdGet(`/manga?${mangaQs}`);
     for (const m of mangaJson.data as MangaDexManga[]) {
@@ -467,14 +498,36 @@ export async function getLatestChapterUpdates(
     }
   }
 
-  return chapters.map((ch) => {
+  const seenManga = new Set<string>();
+  const updates: ChapterUpdateInfo[] = [];
+
+  for (const ch of chapters) {
     const info = toChapterInfo(ch);
-    return {
+    if (!info.mangaId) continue;
+    const manga = mangaById.get(info.mangaId);
+    if (!manga) continue; // Exclude chapters whose manga failed to load
+    if (seenManga.has(info.mangaId)) continue; // Deduplicate by mangaId
+
+    seenManga.add(info.mangaId);
+    updates.push({
       ...info,
       groupName: groupNameById.get(ch.id) ?? null,
-      manga: info.mangaId ? mangaById.get(info.mangaId) : undefined,
-    };
-  });
+      manga,
+    });
+  }
+
+  return updates;
+}
+
+/**
+ * Featured manga: fetches the popular new trending titles matching the
+ * MangaDex website's "Popular New Titles" section. Periodically refreshed so the carousel stays current.
+ */
+export async function getFeaturedManga(
+  limit = 10,
+  filters?: DefaultFilters,
+): Promise<MangaInfo[]> {
+  return getPopularNewTitles(limit, filters);
 }
 
 /** Get full details for a single manga. */
@@ -490,22 +543,61 @@ export async function getMangaDetail(id: string): Promise<MangaInfo | null> {
   }
 }
 
+/** Resolve mangaId, title, and coverUrl from a chapter ID. */
+export async function getMangaIdFromChapter(
+  chapterId: string,
+): Promise<{
+  mangaId: string | null;
+  title: string | null;
+  coverUrl: string | null;
+}> {
+  try {
+    const json = await mdGet(`/chapter/${chapterId}?includes[]=manga`);
+    const mangaRel = json.data?.relationships?.find(
+      (r: Record<string, unknown>) => r.type === "manga",
+    );
+    if (!mangaRel?.id) return { mangaId: null, title: null, coverUrl: null };
+    const mangaId = mangaRel.id as string;
+    const title = mangaRel.attributes?.title
+      ? ((mangaRel.attributes as Record<string, unknown>).title as Record<string, string>).en ||
+        Object.values(
+          (mangaRel.attributes as Record<string, unknown>).title as Record<string, string>,
+        )[0] ||
+        null
+      : null;
+
+    const detail = await getMangaDetail(mangaId);
+    return {
+      mangaId,
+      title: title ?? detail?.title ?? null,
+      coverUrl: detail?.coverUrl ?? null,
+    };
+  } catch {
+    return { mangaId: null, title: null, coverUrl: null };
+  }
+}
+
 /** Get chapter list for a manga. */
 export async function getChapters(
   mangaId: string,
-  lang = "en",
+  lang?: string,
+  contentRating: string[] = ["safe", "suggestive", "erotica", "pornographic"],
 ): Promise<ChapterInfo[]> {
   // The manga ID is in the path (`/manga/{id}/feed`); it must NOT also be
   // passed as a `manga` query param — MangaDex rejects that with HTTP 400
   // ("The property manga is not defined and the definition does not allow
   // additional properties").
-  const qs = buildQuery({
-    translatedLanguage: [lang],
+  const queryParams: Record<string, string | string[]> = {
     "order[chapter]": "desc",
     limit: "100",
     offset: "0",
     includes: ["scanlation_group"],
-  });
+    contentRating,
+  };
+  if (lang && lang.trim() !== "") {
+    queryParams.translatedLanguage = [lang];
+  }
+  const qs = buildQuery(queryParams);
   const json = await mdGet(`/manga/${mangaId}/feed?${qs}`);
   return (json.data as MangaDexChapter[]).map((c) => ({
     ...toChapterInfo(c),

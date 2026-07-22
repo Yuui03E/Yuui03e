@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { History as HistoryIcon, Square, CheckSquare2, Trash2 } from "lucide-react";
+import { History as HistoryIcon, Square, CheckSquare2, Trash2, Eye } from "lucide-react";
 import type { HistoryRow } from "../api";
 import { deleteHistoryEntries } from "../api";
 
@@ -24,19 +24,25 @@ export default function HistoryTab({
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const handleCardClick = (chapterId: string) => {
+  const handleCardClick = (h: HistoryRow) => {
     if (isSelectMode) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        if (next.has(chapterId)) {
-          next.delete(chapterId);
+        if (next.has(h.chapter_id)) {
+          next.delete(h.chapter_id);
         } else {
-          next.add(chapterId);
+          next.add(h.chapter_id);
         }
         return next;
       });
     } else {
-      navigate(`/mangadex/reader/${chapterId}`);
+      window.__mdNav = {
+        mangaId: h.manga_id,
+        title: h.title ?? undefined,
+        coverUrl: h.cover_url ?? undefined,
+        fromHistory: true,
+      };
+      navigate(`/mangadex/reader/${h.chapter_id}`);
     }
   };
 
@@ -138,14 +144,19 @@ export default function HistoryTab({
           }}
         >
           {history.map((h) => {
-            const savedPage = localStorage.getItem(`yuui_md_page_${h.chapter_id}`);
+            let savedPage = "";
+            try {
+              savedPage = localStorage.getItem(`yuui_md_page_${h.chapter_id}`) ?? "";
+            } catch {
+              // localStorage may be unavailable (private browsing, quota exceeded)
+            }
             const isSelected = selectedIds.has(h.chapter_id);
 
             return (
               <div key={h.chapter_id} className="flex flex-col gap-2 select-none">
                 {/* Poster container card */}
                 <div 
-                  onClick={() => handleCardClick(h.chapter_id)}
+                  onClick={() => handleCardClick(h)}
                   className={`relative group aspect-[3/4] rounded-xl overflow-hidden border bg-yuui-panel shadow-card cursor-pointer transition-all ${
                     isSelected ? "border-accent ring-2 ring-accent/20" : "border-white/[0.06] hover:border-white/[0.15]"
                   }`}
@@ -203,9 +214,29 @@ export default function HistoryTab({
 
                 {/* Read metadata information displayed safely below the card */}
                 <div className="flex flex-col gap-0.5 px-1 leading-tight text-[11px] text-muted-foreground font-mono">
-                  <span className="text-white/75 font-semibold truncate">
-                    {savedPage ? `Page ${savedPage}` : `${Math.round(h.progress * 100)}% read`}
-                  </span>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-white/75 font-semibold truncate">
+                      {savedPage ? `Page ${savedPage}` : `${Math.round(h.progress * 100)}% read`}
+                    </span>
+                    {h.manga_id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.__mdNav = {
+                            mangaId: h.manga_id,
+                            title: h.title ?? undefined,
+                            coverUrl: h.cover_url ?? undefined,
+                            fromHistory: true,
+                          };
+                          navigate(`/mangadex/manga/${h.manga_id}`);
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-yuui-accent hover:underline font-sans cursor-pointer shrink-0"
+                        title="View Manga Details"
+                      >
+                        <Eye className="h-3 w-3" /> Details
+                      </button>
+                    )}
+                  </div>
                   <span className="text-[9px] opacity-75">
                     {new Date(h.read_at * 1000).toLocaleString(undefined, {
                       month: "short",

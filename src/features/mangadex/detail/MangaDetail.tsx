@@ -8,9 +8,11 @@ import {
   Globe,
   ArrowUp,
   ArrowDown,
+  ExternalLink,
 } from "lucide-react";
-import { getMangaDetail, getChapters, getReadingProgress, getChapterPages } from "./api";
-import type { MangaInfo, ChapterInfo, ProgressRow } from "./api";
+import { getMangaDetail, getChapters, getReadingProgress, getChapterPages } from "../api";
+import type { MangaInfo, ChapterInfo, ProgressRow } from "../api";
+import { useLibrary } from "../../../store/library";
 
 declare global {
   interface Window {
@@ -18,6 +20,7 @@ declare global {
       mangaId?: string;
       title?: string;
       coverUrl?: string;
+      fromHistory?: boolean;
     };
   }
 }
@@ -31,13 +34,14 @@ function goReader(
   title?: string,
   coverUrl?: string,
 ) {
-  window.__mdNav = { mangaId, title, coverUrl };
+  window.__mdNav = { mangaId, title, coverUrl, fromHistory: false };
   navigate(`/mangadex/reader/${ch}`);
 }
 
 export default function MangaDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { mangadexTranslatedLanguage, mangadexContentRating } = useLibrary();
   const [manga, setManga] = useState<MangaInfo | null>(null);
   const [chapters, setChapters] = useState<ChapterInfo[]>([]);
   const [progress, setProgress] = useState<ProgressRow | null>(null);
@@ -49,6 +53,14 @@ export default function MangaDetail() {
   // Banner images fetched from first chapter pages
   const [bannerUrls, setBannerUrls] = useState<string[]>([]);
 
+  const handleBack = () => {
+    if (window.__mdNav?.fromHistory) {
+      navigate("/mangadex?tab=history");
+    } else {
+      navigate(-1);
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -59,7 +71,7 @@ export default function MangaDetail() {
     let alive = true;
     Promise.all([
       getMangaDetail(id).catch(() => null),
-      getChapters(id).catch(() => [] as ChapterInfo[]),
+      getChapters(id, mangadexTranslatedLanguage, mangadexContentRating).catch(() => [] as ChapterInfo[]),
       getReadingProgress(id).catch(() => null),
     ])
       .then(([m, c, p]) => {
@@ -95,7 +107,7 @@ export default function MangaDetail() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, mangadexTranslatedLanguage, mangadexContentRating]);
 
   if (loading) {
     return (
@@ -180,56 +192,69 @@ export default function MangaDetail() {
   };
 
   const renderLinks = () => {
-    if (!manga.links) return null;
-    const items = [];
+    const items = [
+      <a
+        key="mangadex"
+        href={`https://mangadex.org/title/${manga.id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-between rounded-xl border border-yuui-accent/30 bg-yuui-accent/10 px-3.5 py-2 text-xs font-semibold text-yuui-accent transition-colors hover:bg-yuui-accent/20 hover:text-white"
+      >
+        <span className="flex items-center gap-1.5">
+          <ExternalLink className="h-3.5 w-3.5" /> View on MangaDex
+        </span>
+        <span className="text-[10px] opacity-70 font-mono">↗</span>
+      </a>,
+    ];
 
-    const mapping = {
-      mal: {
-        label: "MyAnimeList",
-        url: (id: string) => `https://myanimelist.net/manga/${id}`,
-      },
-      al: {
-        label: "AniList",
-        url: (id: string) => `https://anilist.co/manga/${id}`,
-      },
-      kt: {
-        label: "Kitsu",
-        url: (id: string) => `https://kitsu.io/manga/${id}`,
-      },
-      mu: {
-        label: "MangaUpdates",
-        url: (id: string) =>
-          `https://www.mangaupdates.com/series.html?id=${id}`,
-      },
-      ap: {
-        label: "Anime-Planet",
-        url: (id: string) => `https://www.anime-planet.com/manga/${id}`,
-      },
-      raw: { label: "Official Raw", url: (url: string) => url },
-      eng: { label: "Official English", url: (url: string) => url },
-      amz: { label: "Amazon", url: (url: string) => url },
-    };
+    if (manga.links) {
+      const mapping = {
+        mal: {
+          label: "MyAnimeList",
+          url: (id: string) => `https://myanimelist.net/manga/${id}`,
+        },
+        al: {
+          label: "AniList",
+          url: (id: string) => `https://anilist.co/manga/${id}`,
+        },
+        kt: {
+          label: "Kitsu",
+          url: (id: string) => `https://kitsu.io/manga/${id}`,
+        },
+        mu: {
+          label: "MangaUpdates",
+          url: (id: string) =>
+            `https://www.mangaupdates.com/series.html?id=${id}`,
+        },
+        ap: {
+          label: "Anime-Planet",
+          url: (id: string) => `https://www.anime-planet.com/manga/${id}`,
+        },
+        raw: { label: "Official Raw", url: (url: string) => url },
+        eng: { label: "Official English", url: (url: string) => url },
+        amz: { label: "Amazon", url: (url: string) => url },
+      };
 
-    for (const [key, val] of Object.entries(manga.links)) {
-      const cfg = mapping[key as keyof typeof mapping];
-      if (cfg) {
-        const url = cfg.url(val);
-        items.push(
-          <a
-            key={key}
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.06] hover:text-white"
-          >
-            <span>{cfg.label}</span>
-            <span className="text-[10px] text-yuui-muted font-mono">↗</span>
-          </a>,
-        );
+      for (const [key, val] of Object.entries(manga.links)) {
+        const cfg = mapping[key as keyof typeof mapping];
+        if (cfg) {
+          const url = cfg.url(val);
+          items.push(
+            <a
+              key={key}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.06] hover:text-white"
+            >
+              <span>{cfg.label}</span>
+              <span className="text-[10px] text-yuui-muted font-mono">↗</span>
+            </a>,
+          );
+        }
       }
     }
 
-    if (items.length === 0) return null;
     return (
       <div className="space-y-2">
         <h3 className="text-xs font-bold uppercase tracking-wider text-yuui-muted">
@@ -288,7 +313,7 @@ export default function MangaDetail() {
         <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-yuui-bg to-transparent pointer-events-none" />
 
         <button
-          onClick={() => navigate("/mangadex")}
+          onClick={handleBack}
           className="glass absolute left-6 top-6 z-10 rounded-xl px-3 py-1.5 text-sm hover:bg-white/[0.1] cursor-pointer active:scale-95 transition-all text-white"
         >
           ← Back

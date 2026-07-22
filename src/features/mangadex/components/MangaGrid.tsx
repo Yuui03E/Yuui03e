@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { MangaInfo, ChapterUpdateInfo } from "../api";
-import { MangaCard } from "../MangaCard";
+import { MangaCard } from "../browse/MangaCard";
 
 interface MangaGridProps {
   items: (MangaInfo | ChapterUpdateInfo)[];
@@ -71,7 +71,7 @@ export default function MangaGrid({
           s.onLoadMore();
         }
       },
-      { threshold: 0.1 },
+      { rootMargin: "300px", threshold: 0.1 },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -122,16 +122,17 @@ export default function MangaGrid({
         }}
       >
         {items.map((u) => {
-          const chUpdate = u as ChapterUpdateInfo;
-          const manga = (chUpdate.manga ?? (u as MangaInfo)) as MangaInfo;
+          const isChapterUpdate = "manga" in u || "mangaId" in u;
+          const chUpdate = isChapterUpdate ? (u as ChapterUpdateInfo) : null;
+          const manga = chUpdate ? chUpdate.manga : (u as MangaInfo);
           if (!manga?.id) return null;
           const subtitle =
-            showChapterSubtitle && chUpdate.chapter
-              ? `${chUpdate.volume ? `Vol. ${chUpdate.volume} ` : ""}Ch. ${chUpdate.chapter} · ${chUpdate.lang.toUpperCase()}`
+            showChapterSubtitle && chUpdate?.chapter
+              ? `${chUpdate.volume ? `Vol. ${chUpdate.volume} ` : ""}Ch. ${chUpdate.chapter}${chUpdate.lang ? ` · ${chUpdate.lang.toUpperCase()}` : ""}`
               : undefined;
           return (
             <MangaCard
-              key={manga.id + (chUpdate.id ?? "")}
+              key={manga.id}
               manga={manga}
               onClick={() => navigate(`/mangadex/manga/${manga.id}`)}
               subtitle={subtitle}

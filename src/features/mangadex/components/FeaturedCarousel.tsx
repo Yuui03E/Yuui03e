@@ -24,6 +24,7 @@ export default function FeaturedCarousel({
 }: FeaturedCarouselProps) {
   const navigate = useNavigate();
   const [idx, setIdx] = useState(0);
+  const [coverErrors, setCoverErrors] = useState<Set<number>>(new Set());
   // Whether the pointer is currently over the info panel — pauses auto-advance.
   const [hoveringInfo, setHoveringInfo] = useState(false);
   // Index being hovered on a dot — previews that title without committing.
@@ -69,10 +70,13 @@ export default function FeaturedCarousel({
                 className="relative h-full shrink-0 overflow-hidden cursor-pointer group/poster"
                 style={{ aspectRatio: "3 / 4" }}
               >
-                {m.coverUrl ? (
+                {m.coverUrl && !coverErrors.has(activeIdx) ? (
                   <img
                     src={m.coverUrl}
                     alt={m.title}
+                    onError={() =>
+                      setCoverErrors((prev) => new Set(prev).add(activeIdx))
+                    }
                     className="h-full w-full object-cover transition-transform duration-500 group-hover/poster:scale-105"
                   />
                 ) : (

@@ -43,7 +43,11 @@ export function useFavorite(mangaId: string | undefined): {
     async (manga?: MangaInfo) => {
       if (!mangaId) return;
       if (fav) {
-        await removeFavorite(mangaId);
+        try {
+          await removeFavorite(mangaId);
+        } catch {
+          // Silently ignore removal failure — fav state will be refreshed on next mount
+        }
         setFav(false);
         return;
       }
@@ -53,8 +57,12 @@ export function useFavorite(mangaId: string | undefined): {
         cover_url: manga?.coverUrl ?? null,
         content_rating: manga?.contentRating ?? null,
       };
-      await addFavorite(mangaId, payload);
-      setFav(true);
+      try {
+        await addFavorite(mangaId, payload);
+        setFav(true);
+      } catch {
+        // Silently ignore add failure — fav state will be refreshed on next mount
+      }
     },
     [fav, mangaId],
   );
