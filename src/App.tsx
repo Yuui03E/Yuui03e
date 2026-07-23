@@ -15,6 +15,10 @@ import ProfilePage from "./features/library/ProfilePage";
 import MangadexPage from "./features/mangadex/MangadexPage";
 import MangaDetail from "./features/mangadex/detail/MangaDetail";
 import ChapterReader from "./features/mangadex/reader/ChapterReader";
+import YandeGalleryPage from "./features/yandere/YandeGalleryPage";
+import DownloadProgressWidget from "./features/yandere/components/DownloadProgressWidget";
+
+
 
 function Page({ children }: { children: React.ReactNode }) {
   return (
@@ -132,11 +136,24 @@ export default function App() {
                     </Page>
                   }
                 />
+                <Route
+                  path="/yandere"
+                  element={
+                    <Page>
+                      <YandeGalleryPage />
+                    </Page>
+                  }
+                />
               </Routes>
+
             </AnimatePresence>
           </div>
         </main>
       </div>
+
+      {/* Floating Download Progress Bar Widget — Bottom Right */}
+      <DownloadProgressWidget />
     </div>
   );
 }
+

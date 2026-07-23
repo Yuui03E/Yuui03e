@@ -14,7 +14,10 @@ import {
   PanelLeftClose,
   PanelLeft,
   BookOpen,
+  Wallpaper,
 } from "lucide-react";
+
+
 
 // Shared box + icon dimensions so every option matches.
 const BTN_CLS =
@@ -75,7 +78,7 @@ function SidebarNavItem({
 }
 
 export default function Sidebar() {
-  const { anilistUser, mangadexEnabled } = useLibrary();
+  const { anilistUser, mangadexEnabled, yandereEnabled } = useLibrary();
   const [hidden, setHidden] = useState(
     () => localStorage.getItem("yuui_sidebar_hidden") === "true",
   );
@@ -119,8 +122,13 @@ export default function Sidebar() {
                 ...(mangadexEnabled
                   ? [{ to: "/mangadex", label: "MangaDex", Icon: BookOpen }]
                   : []),
+                ...(yandereEnabled !== false
+                  ? [{ to: "/yandere", label: "Wallpapers", Icon: Wallpaper }]
+                  : []),
+
                 { to: "/settings", label: "Settings", Icon: Settings },
               ].map((item) => (
+
                 <SidebarNavItem
                   key={item.to}
                   to={item.to}

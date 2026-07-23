@@ -6,6 +6,7 @@ import { createAnilistSlice } from "./slices/anilistSlice";
 import { createSyncSlice } from "./slices/syncSlice";
 import { createEntrySlice } from "./slices/entrySlice";
 import { createMangadexSlice } from "./slices/mangadexSlice";
+import { createYandereSlice } from "./slices/yandereSlice";
 
 export type { LibraryState } from "./types";
 
@@ -16,4 +17,6 @@ export const useLibrary = create<LibraryState>()((...a) => ({
   ...createSyncSlice(...a),
   ...createEntrySlice(...a),
   ...createMangadexSlice(...a),
+  ...createYandereSlice(...a),
 }));
+

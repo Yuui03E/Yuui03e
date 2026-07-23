@@ -106,6 +106,11 @@ pub fn run() {
             commands::remove_file_entries,
             // MangaDex API proxy
             commands::mangadex_get,
+            // Yande.re API proxy
+            commands::yandere_get,
+            commands::download_artwork_file,
+
+
             // MangaDex favorites + reading history
             commands::mangadex_add_favorite,
             commands::mangadex_remove_favorite,

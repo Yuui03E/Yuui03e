@@ -6,6 +6,7 @@ import { SystemInfoSection } from "./sections/SystemInfoSection";
 import { TmdbSection } from "./sections/TmdbSection";
 import { AnilistSection } from "./sections/AnilistSection";
 import { MangadexSection } from "./sections/MangadexSection";
+import { YandereSection } from "./sections/YandereSection";
 
 export default function SettingsPage() {
   return (
@@ -45,7 +46,11 @@ export default function SettingsPage() {
 
         {/* MangaDex Integration Section */}
         <MangadexSection />
+
+        {/* Yande.re Anime Wallpapers Section */}
+        <YandereSection />
       </div>
     </div>
   );
 }
+

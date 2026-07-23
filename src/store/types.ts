@@ -186,6 +186,29 @@ export interface MangadexSlice {
   setMangadexReaderPrefs: (patch: Partial<MangadexReaderPrefs>) => Promise<void>;
 }
 
+export interface YandereSlice {
+  yandereEnabled: boolean;
+  yandereRatings: ("s" | "q" | "e")[];
+  yandereAspectFilter: "all" | "desktop" | "mobile";
+  yandereSort: "recent" | "popular" | "random";
+  yandereBlurNSFW: boolean;
+  yandereCardSize: number;
+  yandereDownloadDir: string | null;
+  yandereFavorites: import("../lib/yandereApi").YandePost[];
+
+  setYandereEnabled: (enabled: boolean) => Promise<void>;
+  setYandereRatings: (ratings: ("s" | "q" | "e")[]) => Promise<void>;
+  setYandereAspectFilter: (filter: "all" | "desktop" | "mobile") => Promise<void>;
+  setYandereSort: (sort: "recent" | "popular" | "random") => Promise<void>;
+  setYandereBlurNSFW: (blur: boolean) => Promise<void>;
+
+  setYandereCardSize: (size: number) => void;
+  setYandereDownloadDir: (dir: string | null) => Promise<void>;
+  toggleYandereFavorite: (post: import("../lib/yandereApi").YandePost) => void;
+}
+
+
+
 export interface LibraryState
   extends
     ThemeSlice,
@@ -193,4 +216,6 @@ export interface LibraryState
     AnilistSlice,
     SyncSlice,
     EntrySlice,
-    MangadexSlice {}
+    MangadexSlice,
+    YandereSlice {}
+
